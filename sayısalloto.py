@@ -65,6 +65,7 @@ def predict_next_pattern(last_pattern, transitions):
             return p
     return probs[0][0]
 
+# -------------------- HATASIZ Kolon Üretim Fonksiyonu --------------------
 def generate_column(pattern, hot, neutral, cold):
     """
     Pattern uyumlu kolon üretimi:
@@ -76,20 +77,21 @@ def generate_column(pattern, hot, neutral, cold):
     pattern_sizes = list(map(int, pattern.split("-")))
 
     for size in pattern_sizes:
-        # Kullanılacak ondalık havuzu belirle
+        # Kalan kullanılabilir ondalıklar
         possible_decades = [d for d in range(0, 9) if d not in used_decades]
         d = random.choice(possible_decades)
         used_decades.add(d)
 
         # Ondalıkta kullanılabilir sayılar
         pool = [n for n in range(d*10, d*10 + 10) if 1 <= n <= 90 and n not in column]
+
+        # Nötr sayıları tercih et
         preferred = [n for n in pool if n in neutral]
 
         if len(preferred) >= size:
             picks = random.sample(preferred, size)
         else:
-            remaining = [n for n in pool if n not in column]
-            picks = random.sample(remaining, size)
+            picks = random.sample(pool, size)
 
         column.extend(picks)
 
@@ -109,7 +111,7 @@ def generate_column(pattern, hot, neutral, cold):
             if candidates:
                 column[idx] = random.choice(candidates)
 
-    return sorted(column)
+    return sorted([int(n) for n in column])
 
 def score_column(col, hot, cold, pair_stats):
     score = 0
