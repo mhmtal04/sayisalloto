@@ -76,12 +76,14 @@ def generate_column(pattern, hot, neutral, cold):
     pattern_sizes = list(map(int, pattern.split("-")))
 
     for size in pattern_sizes:
+        # Kullanılacak ondalık havuzu belirle
         possible_decades = [d for d in range(0, 9) if d not in used_decades]
         d = random.choice(possible_decades)
         used_decades.add(d)
 
-        pool = [n for n in range(d*10, d*10 + 10) if 1 <= n <= 90]
-        preferred = [n for n in pool if n in neutral and n not in column]
+        # Ondalıkta kullanılabilir sayılar
+        pool = [n for n in range(d*10, d*10 + 10) if 1 <= n <= 90 and n not in column]
+        preferred = [n for n in pool if n in neutral]
 
         if len(preferred) >= size:
             picks = random.sample(preferred, size)
@@ -92,19 +94,20 @@ def generate_column(pattern, hot, neutral, cold):
         column.extend(picks)
 
     # Sıcak/soğuk ekleme (ondalık bozmadan)
-    if cold and random.random() < 0.35:
-        idx = random.randint(0, 5)
-        dec = decade(column[idx])
-        candidates = [n for n in cold if decade(n) == dec and n not in column]
-        if candidates:
-            column[idx] = random.choice(candidates)
+    for _ in range(2):
+        if cold and random.random() < 0.35:
+            idx = random.randint(0, len(column)-1)
+            dec = decade(column[idx])
+            candidates = [n for n in cold if decade(n) == dec and n not in column]
+            if candidates:
+                column[idx] = random.choice(candidates)
 
-    if hot and random.random() < 0.35:
-        idx = random.randint(0, 5)
-        dec = decade(column[idx])
-        candidates = [n for n in hot if decade(n) == dec and n not in column]
-        if candidates:
-            column[idx] = random.choice(candidates)
+        if hot and random.random() < 0.35:
+            idx = random.randint(0, len(column)-1)
+            dec = decade(column[idx])
+            candidates = [n for n in hot if decade(n) == dec and n not in column]
+            if candidates:
+                column[idx] = random.choice(candidates)
 
     return sorted(column)
 
