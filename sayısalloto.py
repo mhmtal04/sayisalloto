@@ -43,6 +43,7 @@ def pair_analysis(df):
             pair_counter[(a, b)] += 1
     return pair_counter
 
+# -------------------- Örüntü Analizi --------------------
 def build_transition(pattern_list):
     transitions = defaultdict(Counter)
     for i in range(len(pattern_list) - 1):
@@ -69,47 +70,44 @@ def predict_next_pattern(last_pattern, transitions):
 def generate_column(pattern, hot, neutral, cold):
     """
     Pattern uyumlu kolon üretimi:
-    - Baş grup ve diğer ondalık gruplar doğru uygulanır
-    - Sıcak/soğuk sayılar ondalık bozmadan eklenir
+    - Her grup büyüklüğüne göre ondalık ayarı
+    - Grup>1 aynı ondalıkta, grup=1 farklı ondalıklardan
+    - Sıcak/soğuk eklemeleri ondalık bozmadan
     """
     column = []
-    used_decades = set()
     pattern_sizes = list(map(int, pattern.split("-")))
+    used_decades = set()
 
     for size in pattern_sizes:
-        # Kalan kullanılabilir ondalıklar
-        possible_decades = [d for d in range(0, 9) if d not in used_decades]
-        d = random.choice(possible_decades)
-        used_decades.add(d)
-
-        # Ondalıkta kullanılabilir sayılar
-        pool = [n for n in range(d*10, d*10 + 10) if 1 <= n <= 90 and n not in column]
-
-        # Nötr sayıları tercih et
-        preferred = [n for n in pool if n in neutral]
-
-        if len(preferred) >= size:
-            picks = random.sample(preferred, size)
-        else:
+        if size > 1:
+            # Kalan kullanılabilir ondalıklar
+            possible_decades = [d for d in range(0, 9) if d not in used_decades]
+            dec = random.choice(possible_decades)
+            used_decades.add(dec)
+            pool = [n for n in range(dec*10, dec*10+10) if 1 <= n <= 90 and n not in column]
             picks = random.sample(pool, size)
-
+        else:
+            possible_decades = [d for d in range(0, 9) if d not in used_decades]
+            dec = random.choice(possible_decades)
+            used_decades.add(dec)
+            pool = [n for n in range(dec*10, dec*10+10) if 1 <= n <= 90 and n not in column]
+            picks = [random.choice(pool)]
         column.extend(picks)
 
     # Sıcak/soğuk ekleme (ondalık bozmadan)
     for _ in range(2):
-        if cold and random.random() < 0.35:
-            idx = random.randint(0, len(column)-1)
-            dec = decade(column[idx])
-            candidates = [n for n in cold if decade(n) == dec and n not in column]
-            if candidates:
-                column[idx] = random.choice(candidates)
+        idx = random.randint(0, len(column)-1)
+        dec = decade(column[idx])
 
-        if hot and random.random() < 0.35:
-            idx = random.randint(0, len(column)-1)
-            dec = decade(column[idx])
-            candidates = [n for n in hot if decade(n) == dec and n not in column]
-            if candidates:
-                column[idx] = random.choice(candidates)
+        # Cold ekleme
+        candidates = [n for n in cold if decade(n) == dec and n not in column] if cold else []
+        if candidates and random.random() < 0.35:
+            column[idx] = random.choice(candidates)
+
+        # Hot ekleme
+        candidates = [n for n in hot if decade(n) == dec and n not in column] if hot else []
+        if candidates and random.random() < 0.35:
+            column[idx] = random.choice(candidates)
 
     return sorted([int(n) for n in column])
 
