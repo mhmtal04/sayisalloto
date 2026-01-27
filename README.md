@@ -1,2 +1,2 @@
-# say-salloto
+# sayisalloto
 Çılgın sayısal loto tahmin botu. 
