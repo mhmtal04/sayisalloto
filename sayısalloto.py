@@ -1,176 +1,97 @@
 import streamlit as st
 import pandas as pd
-import random
-from collections import Counter, defaultdict
-from itertools import combinations
+import numpy as np
+from collections import Counter
 
-# -------------------------------------------------
-# Sayfa Ayarları
-# -------------------------------------------------
-st.set_page_config(
-    page_title="🎯 Sayısal Loto Düşünen Bot",
-    page_icon="🎯",
-    layout="wide"
-)
+st.set_page_config(page_title="AI Loto Analisti Pro", page_icon="🧪", layout="wide")
 
-st.title("🎯 Sayısal Loto Örüntü & Diziliş Botu")
-st.caption("Ondalık diziliş • örüntü • sıcak/soğuk • favori kolon")
-st.divider()
+st.title("🧪 Gelişmiş Otonom Analiz Botu (V2)")
+st.markdown("Bot, son **15 çekilişi** tarayarak aşırı ısınan sayıları eler ve bölge doygunluğunu hesaplar.")
 
-# -------------------------------------------------
-# Yardımcı Fonksiyonlar
-# -------------------------------------------------
-def get_decade(n: int) -> int:
-    return n // 10
+uploaded_file = st.file_uploader("Veri setini yükle (CSV)", type="csv")
 
-def determine_pattern(numbers):
-    """Verilen kolonun diziliş patternini çıkarır (1-2-1-1 gibi)"""
-    decades = [get_decade(n) for n in numbers]
-    pattern = []
-    i = 0
-    while i < len(decades):
-        count = 1
-        for j in range(i+1, len(decades)):
-            if decades[j] == decades[i]:
-                count += 1
-            else:
-                break
-        pattern.append(count)
-        i += count
-    return pattern
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
+    draws = df[cols].values
+    
+    # --- ANALİZ PARAMETRELERİ ---
+    LOOKBACK = 15  # Son 15 çekilişe göre filtreleme yapar
+    
+    # 1. Bölge Doygunluk Analizi
+    def get_pattern(draw):
+        return tuple(np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])[0])
 
-def analyze_patterns(df):
-    """Tüm kolonların patternlerini analiz eder"""
-    patterns = [tuple(determine_pattern(row)) for row in df.values]
-    counter = Counter(patterns)
-    return counter
+    patterns = [get_pattern(d) for d in draws]
+    recent_patterns = patterns[:LOOKBACK]
+    
+    # En çok doyuma ulaşan bölgeyi bul (Örn: 20'ler çok çıktıysa o bölgeye ceza puanı)
+    region_counts = np.sum(recent_patterns, axis=0)
+    max_saturated_region = np.argmax(region_counts) # En çok çıkan 10'luk grup indexi
 
-def frequency_analysis(df):
-    freq = Counter(df.values.flatten())
-    avg = sum(freq.values()) / len(freq)
-    hot = [n for n, f in freq.items() if f > avg * 1.3]
-    cold = [n for n, f in freq.items() if f < avg * 0.7]
-    neutral = [n for n in freq if n not in hot and n not in cold]
-    return hot, neutral, cold, freq
+    # 2. Sayı Puanlama Sistemi
+    all_numbers = draws.flatten()
+    freq = Counter(all_numbers)
+    last_app = {n: i for i, d in enumerate(draws) for n in d}
 
-def pair_analysis(df):
-    pair_counter = Counter()
-    for row in df.values:
-        for a, b in combinations(sorted(row), 2):
-            pair_counter[(a, b)] += 1
-    return pair_counter
+    def get_autonomous_score(n):
+        base_score = freq[n] * 0.5  # Genel tarihsel başarı
+        recency_bonus = last_app.get(n, 100) * 0.5 # Ne kadar süredir çıkmıyor? (Bekleyen sayı avantajı)
+        
+        # CEZA SİSTEMİ (Son 15 Çekiliş)
+        count_in_recent = np.sum(draws[:LOOKBACK] == n)
+        if count_in_recent >= 3: # Son 15 çekilişte 3 ve üzeri çıkan sayıya (40 gibi) ağır ceza
+            base_score -= 200
+        elif count_in_recent >= 1: # En az 1 kere çıkana hafif ceza
+            base_score -= 50
+            
+        # Bölge Cezası (Eğer sayı en doygun bölgedeyse puan kır)
+        n_region = (n-1) // 10
+        if n_region == max_saturated_region:
+            base_score -= 30
+            
+        return base_score + recency_bonus
 
-def generate_column_for_pattern(pattern, hot, neutral, cold, pair_stats, t_history):
-    """
-    Pattern'e uygun kolon üretir.
-    - pattern: ör. [1,2,1,1,1]
-    - t_history: geçmiş T kolonları verisi
-    """
-    column = []
-    used_decades = []
-    for idx, group_size in enumerate(pattern):
-        # Pozisyona göre sayı havuzu
-        possible = list(range(1, 91))
-        # Önceki T ile ilişkili seçimi dikkate al
-        if idx > 0 and len(column) > 0:
-            prev = column[-1]
-            # Aynı ondalık gerekirse
-            if group_size > 1:
-                dec = get_decade(prev)
-                possible = [n for n in possible if get_decade(n) == dec]
-        # Onluk grubuna göre kullanılacak sayı
-        possible = [n for n in possible if n not in column]
-        # Öncelik: hot -> neutral -> cold
-        choices = [n for n in possible if n in hot] or \
-                  [n for n in possible if n in neutral] or \
-                  [n for n in possible if n in cold] or \
-                  possible
-        if len(choices) >= group_size:
-            picks = random.sample(choices, group_size)
-        else:
-            picks = choices
-        column.extend(picks)
-    return sorted(column)[:6]
+    # 3. Kolon Üretimi
+    def generate_smart_column():
+        # Geçiş analizi ile en olası dizilişi bul
+        transitions = [patterns[i] for i in range(len(patterns)-1) if patterns[i+1] == patterns[0]]
+        best_p = Counter(transitions).most_common(1)[0][0] if transitions else patterns[0]
+        
+        col = []
+        bins = [1, 11, 21, 31, 41, 51, 61, 71, 81, 91]
+        for i, count in enumerate(best_p):
+            if count > 0:
+                candidates = [n for n in range(bins[i], bins[i+1])]
+                candidates.sort(key=get_autonomous_score, reverse=True)
+                col.extend(candidates[:count])
+        return sorted(col), best_p
 
-def score_column(col, hot, cold, pair_stats):
-    score = 0
-    for n in col:
-        if n in hot:
-            score += 2
-        elif n in cold:
-            score += 0.5
-        else:
-            score += 1
-    for a, b in combinations(col, 2):
-        score += pair_stats.get((a, b), 0) * 0.05
-    return round(score, 2)
+    # --- ARAYÜZ ---
+    st.divider()
+    col1, col2 = st.columns([1, 2])
 
-# -------------------------------------------------
-# CSV Yükleme
-# -------------------------------------------------
-uploaded_file = st.file_uploader(
-    "📂 CSV dosyasını yükle (T1–T6 veya S1–S6)",
-    type="csv"
-)
+    with col1:
+        st.subheader("🕵️ Botun Gözlemleri")
+        st.warning(f"Doygun Bölge: **{max_saturated_region*10}-{(max_saturated_region+1)*10}** arası")
+        st.info(f"Filtreleme Aralığı: Son **{LOOKBACK}** Çekiliş")
+        
+        recent_hot = [num for num, count in Counter(draws[:LOOKBACK].flatten()).items() if count >= 3]
+        st.error(f"Elenen/Cezalı Sayılar: {recent_hot}")
 
-if uploaded_file:
-    df_raw = pd.read_csv(uploaded_file)
-    df_raw.columns = [c.strip().upper() for c in df_raw.columns]
+    with col2:
+        st.subheader("🎯 Otonom Altın Kolonlar")
+        for i in range(2):
+            res, p_type = generate_smart_column()
+            st.success(f"**Altın Kolon {i+1}:** {res}  \n*(Diziliş Tipi: {p_type})*")
 
-    s_cols = ["S1","S2","S3","S4","S5","S6"]
-    t_cols = ["T1","T2","T3","T4","T5","T6"]
-
-    if all(c in df_raw.columns for c in t_cols):
-        df = df_raw[t_cols].copy()
-    elif all(c in df_raw.columns for c in s_cols):
-        df = df_raw[s_cols].copy()
-    else:
-        df = df_raw.iloc[:,1:7].copy()
-    df = df.apply(pd.to_numeric, errors="coerce").dropna().astype(int)
-
-    st.write(f"✅ {len(df)} çekiliş başarıyla işlendi")
-
-    # -------------------------------------------------
-    # Analizler
-    # -------------------------------------------------
-    pattern_counts = analyze_patterns(df)
-    st.subheader("📊 En Çok Çıkan 3 Pattern")
-    for pat, cnt in pattern_counts.most_common(3):
-        st.write(f"{'-'.join(map(str, pat))} → {cnt} kez")
-
-    hot, neutral, cold, freq = frequency_analysis(df)
-    pair_stats = pair_analysis(df)
-
-    st.subheader("🌡️ Sayı Davranışları")
-    st.write(f"🔥 Sıcak: {hot}")
-    st.write(f"⚖️ Nötr: {neutral}")
-    st.write(f"❄️ Soğuk: {cold}")
-
-    # -------------------------------------------------
-    # Kolon Üretimi
-    # -------------------------------------------------
-    st.subheader("🎯 Önerilen Kolonlar (En Çok Çıkan 3 Pattern)")
-    results = []
-    for pat, _ in pattern_counts.most_common(3):
-        col = generate_column_for_pattern(pat, hot, neutral, cold, pair_stats, df)
-        score = score_column(col, hot, cold, pair_stats)
-        results.append((pat, col, score))
-        st.write(f"{'-'.join(map(str, pat))} → {col} | Puan: {score}")
-
-    # -------------------------------------------------
-    # Favori Kolon (Tahmini Sonraki Çekiliş Pattern)
-    # -------------------------------------------------
-    st.subheader("⭐ FAVORİ KOLON (Örüntüye Dayalı Tahmin)")
-    last_pattern = determine_pattern(df.iloc[-1].values)
-    # Basit örüntü tahmini: son pattern'in en çok çıkan devamı
-    next_pattern_candidates = [pat for pat in pattern_counts if pat != tuple(last_pattern)]
-    if next_pattern_candidates:
-        next_pattern = max(next_pattern_candidates, key=lambda p: pattern_counts[p])
-    else:
-        next_pattern = tuple(last_pattern)
-    fav_col = generate_column_for_pattern(next_pattern, hot, neutral, cold, pair_stats, df)
-    fav_score = score_column(fav_col, hot, cold, pair_stats)
-    st.success(f"{fav_col} | Pattern: {'-'.join(map(str,next_pattern))} | Puan: {fav_score}")
+    # Isı Haritası
+    st.divider()
+    st.subheader("📈 Sayıların Son 15 Çekilişteki Baskınlığı")
+    recent_freq = Counter(draws[:LOOKBACK].flatten())
+    rf_df = pd.DataFrame(recent_freq.items(), columns=['Sayı', 'Frekans']).sort_values(by='Sayı')
+    st.bar_chart(rf_df.set_index('Sayı'))
 
 else:
-    st.info("👆 Başlamak için CSV dosyasını yükle")
+    st.info("Lütfen sol taraftan CSV dosyasını yükleyin.")
+ 
