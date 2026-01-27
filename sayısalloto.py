@@ -3,95 +3,93 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="AI Loto Analisti Pro", page_icon="🧪", layout="wide")
+# Sayfa Konfigürasyonu
+st.set_page_config(page_title="AI Sayısal Loto Botu", page_icon="🤖", layout="wide")
 
-st.title("🧪 Gelişmiş Otonom Analiz Botu (V2)")
-st.markdown("Bot, son **15 çekilişi** tarayarak aşırı ısınan sayıları eler ve bölge doygunluğunu hesaplar.")
+st.title("🤖 Otonom Sayısal Loto Analiz Merkezi")
+st.markdown("853 çekilişlik veri seti üzerinde **hiçbir insan müdahalesi olmadan** analiz yapar.")
 
-uploaded_file = st.file_uploader("Veri setini yükle (CSV)", type="csv")
+# 1. Dosya Yükleme
+uploaded_file = st.file_uploader("Çekiliş Verilerini (CSV) Yükle", type="csv")
 
 if uploaded_file is not None:
+    # Veriyi oku
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     draws = df[cols].values
     
-    # --- ANALİZ PARAMETRELERİ ---
-    LOOKBACK = 15  # Son 15 çekilişe göre filtreleme yapar
+    # --- BOTUN ANALİZ PARAMETRELERİ ---
+    LOOKBACK = 15 # Son 15 çekiliş doygunluk filtresi
     
-    # 1. Bölge Doygunluk Analizi
+    # A. Örüntü Analizi (Diziliş Tahmini)
     def get_pattern(draw):
         return tuple(np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])[0])
 
     patterns = [get_pattern(d) for d in draws]
-    recent_patterns = patterns[:LOOKBACK]
-    
-    # En çok doyuma ulaşan bölgeyi bul (Örn: 20'ler çok çıktıysa o bölgeye ceza puanı)
-    region_counts = np.sum(recent_patterns, axis=0)
-    max_saturated_region = np.argmax(region_counts) # En çok çıkan 10'luk grup indexi
+    # Son dizilişten sonra en sık gelen dizilişi bul (Markov Zinciri)
+    last_p = patterns[0]
+    transitions = [patterns[i] for i in range(len(patterns)-1) if patterns[i+1] == last_p]
+    next_pattern = Counter(transitions).most_common(1)[0][0] if transitions else last_p
 
-    # 2. Sayı Puanlama Sistemi
+    # B. Gelişmiş Puanlama Sistemi (Otonom)
     all_numbers = draws.flatten()
     freq = Counter(all_numbers)
-    last_app = {n: i for i, d in enumerate(draws) for n in d}
+    last_seen = {n: i for i, d in enumerate(draws) for n in d}
 
-    def get_autonomous_score(n):
-        base_score = freq[n] * 0.5  # Genel tarihsel başarı
-        recency_bonus = last_app.get(n, 100) * 0.5 # Ne kadar süredir çıkmıyor? (Bekleyen sayı avantajı)
+    def get_score(n):
+        # 1. Tarihsel Başarı (%40)
+        score = freq[n] * 0.4 
+        # 2. Bekleme Süresi Primi (%60) - Ne kadar zamandır çıkmıyorsa o kadar iyi
+        score += last_seen.get(n, 100) * 0.6
         
-        # CEZA SİSTEMİ (Son 15 Çekiliş)
-        count_in_recent = np.sum(draws[:LOOKBACK] == n)
-        if count_in_recent >= 3: # Son 15 çekilişte 3 ve üzeri çıkan sayıya (40 gibi) ağır ceza
-            base_score -= 200
-        elif count_in_recent >= 1: # En az 1 kere çıkana hafif ceza
-            base_score -= 50
+        # 3. Son 15 Çekiliş Filtresi (Doygunluk Cezası)
+        recent_count = np.sum(draws[:LOOKBACK] == n)
+        if recent_count >= 3: # 40 gibi aşırı ısınanlara ağır ceza
+            score -= 200
+        elif recent_count >= 1: # Son dönemde çıkanlara hafif ceza
+            score -= 40
             
-        # Bölge Cezası (Eğer sayı en doygun bölgedeyse puan kır)
-        n_region = (n-1) // 10
-        if n_region == max_saturated_region:
-            base_score -= 30
-            
-        return base_score + recency_bonus
+        return score
 
-    # 3. Kolon Üretimi
-    def generate_smart_column():
-        # Geçiş analizi ile en olası dizilişi bul
-        transitions = [patterns[i] for i in range(len(patterns)-1) if patterns[i+1] == patterns[0]]
-        best_p = Counter(transitions).most_common(1)[0][0] if transitions else patterns[0]
-        
+    # C. Kolon Üretici
+    def generate_col(rank_offset=0):
         col = []
         bins = [1, 11, 21, 31, 41, 51, 61, 71, 81, 91]
-        for i, count in enumerate(best_p):
+        for i, count in enumerate(next_pattern):
             if count > 0:
                 candidates = [n for n in range(bins[i], bins[i+1])]
-                candidates.sort(key=get_autonomous_score, reverse=True)
-                col.extend(candidates[:count])
-        return sorted(col), best_p
+                candidates.sort(key=get_score, reverse=True)
+                # Çeşitlilik için rank_offset kullan
+                idx = rank_offset % len(candidates)
+                col.extend(candidates[idx : idx + count])
+        return sorted(col)
 
-    # --- ARAYÜZ ---
+    # --- EKRAN ÇIKTILARI ---
     st.divider()
-    col1, col2 = st.columns([1, 2])
+    c1, c2 = st.columns([1, 2])
 
-    with col1:
+    with c1:
         st.subheader("🕵️ Botun Gözlemleri")
-        st.warning(f"Doygun Bölge: **{max_saturated_region*10}-{(max_saturated_region+1)*10}** arası")
-        st.info(f"Filtreleme Aralığı: Son **{LOOKBACK}** Çekiliş")
+        st.info(f"Analiz Edilen Çekiliş: **{len(df)}**")
+        st.warning(f"Karantina Süresi: Son **{LOOKBACK}** Çekiliş")
         
-        recent_hot = [num for num, count in Counter(draws[:LOOKBACK].flatten()).items() if count >= 3]
-        st.error(f"Elenen/Cezalı Sayılar: {recent_hot}")
+        # Diziliş Tipini Göster (Sıfırları Temizle)
+        p_str = "-".join([str(x) for x in next_pattern if x > 0])
+        st.success(f"Tahmin Edilen Diziliş: **{p_str}**")
 
-    with col2:
-        st.subheader("🎯 Otonom Altın Kolonlar")
-        for i in range(2):
-            res, p_type = generate_smart_column()
-            st.success(f"**Altın Kolon {i+1}:** {res}  \n*(Diziliş Tipi: {p_type})*")
+    with c2:
+        st.subheader("🏆 Otonom Üretilen Altın Kolonlar")
+        k1 = generate_col(rank_offset=0)
+        k2 = generate_col(rank_offset=1)
+        
+        st.markdown(f"### 🥇 Altın Kolon 1: `{k1}`")
+        st.markdown(f"### 🥈 Altın Kolon 2: `{k2}`")
 
-    # Isı Haritası
+    # Görselleştirme
     st.divider()
-    st.subheader("📈 Sayıların Son 15 Çekilişteki Baskınlığı")
-    recent_freq = Counter(draws[:LOOKBACK].flatten())
-    rf_df = pd.DataFrame(recent_freq.items(), columns=['Sayı', 'Frekans']).sort_values(by='Sayı')
-    st.bar_chart(rf_df.set_index('Sayı'))
+    st.subheader("📊 Tarihsel Frekans Dağılımı")
+    hist_data = pd.DataFrame(freq.items(), columns=['Sayı', 'Frekans']).sort_values('Sayı')
+    st.bar_chart(hist_data.set_index('Sayı'))
 
 else:
-    st.info("Lütfen sol taraftan CSV dosyasını yükleyin.")
- 
+    st.info("Lütfen bilgisayarındaki 'C.sayısaloto (1).csv' dosyasını yukarıdaki alana sürükle.")
