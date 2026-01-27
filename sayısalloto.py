@@ -4,22 +4,18 @@ import random
 from collections import Counter, defaultdict
 from itertools import combinations
 
-# -------------------------------------------------
-# Sayfa Ayarları
-# -------------------------------------------------
+# -------------------- Sayfa Ayarları --------------------
 st.set_page_config(
-    page_title="Sayısal Loto Örüntü & Diziliş Botu",
+    page_title="🎯 Sayısal Loto Örüntü & Diziliş Botu",
     page_icon="🎯",
     layout="wide"
 )
 
 st.title("🎯 Sayısal Loto Örüntü & Diziliş Botu")
-st.caption("Ondalık diziliş • örüntü (transition) • sıcak / soğuk • favori kolon")
+st.caption("Ondalık diziliş • örüntü (geçiş) • sıcak / soğuk • favori kolon")
 st.divider()
 
-# -------------------------------------------------
-# Yardımcı Fonksiyonlar
-# -------------------------------------------------
+# -------------------- Yardımcı Fonksiyonlar --------------------
 def decade(n: int) -> int:
     return n // 10
 
@@ -48,7 +44,6 @@ def pair_analysis(df):
     return pair_counter
 
 def build_transition(pattern_list):
-    """Her pattern'in ardından hangi pattern geldi, olasılıklarıyla"""
     transitions = defaultdict(Counter)
     for i in range(len(pattern_list) - 1):
         curr_p = pattern_list[i]
@@ -57,13 +52,11 @@ def build_transition(pattern_list):
     return transitions
 
 def predict_next_pattern(last_pattern, transitions):
-    """En olası bir sonraki pattern"""
     if last_pattern not in transitions:
         return random.choice(list(transitions.keys()))
     next_patterns = transitions[last_pattern]
     total = sum(next_patterns.values())
     probs = [(p, c / total) for p, c in next_patterns.items()]
-    # Olasılık ağırlıklı seçim
     r = random.random()
     cum_prob = 0
     for p, prob in probs:
@@ -73,30 +66,47 @@ def predict_next_pattern(last_pattern, transitions):
     return probs[0][0]
 
 def generate_column(pattern, hot, neutral, cold):
-    """Ondalık dizilişe göre kolon üretir"""
+    """
+    Pattern uyumlu kolon üretimi:
+    - Baş grup ve diğer ondalık gruplar doğru uygulanır
+    - Sıcak/soğuk sayılar ondalık bozmadan eklenir
+    """
     column = []
     used_decades = set()
     pattern_sizes = list(map(int, pattern.split("-")))
 
-    for i, size in enumerate(pattern_sizes):
-        # Kullanılacak ondalıklar
+    for size in pattern_sizes:
         possible_decades = [d for d in range(0, 9) if d not in used_decades]
-
         d = random.choice(possible_decades)
         used_decades.add(d)
 
-        pool = [n for n in range(d * 10, d * 10 + 10) if 1 <= n <= 90]
-        preferred = [n for n in pool if n in neutral]
-        picks = random.sample(preferred, size) if len(preferred) >= size else random.sample(pool, size)
+        pool = [n for n in range(d*10, d*10 + 10) if 1 <= n <= 90]
+        preferred = [n for n in pool if n in neutral and n not in column]
+
+        if len(preferred) >= size:
+            picks = random.sample(preferred, size)
+        else:
+            remaining = [n for n in pool if n not in column]
+            picks = random.sample(remaining, size)
 
         column.extend(picks)
 
-    # Rastgele soğuk sayıyı ekleme
+    # Sıcak/soğuk ekleme (ondalık bozmadan)
     if cold and random.random() < 0.35:
         idx = random.randint(0, 5)
-        column[idx] = random.choice(cold)
+        dec = decade(column[idx])
+        candidates = [n for n in cold if decade(n) == dec and n not in column]
+        if candidates:
+            column[idx] = random.choice(candidates)
 
-    return sorted(set(column))[:6]
+    if hot and random.random() < 0.35:
+        idx = random.randint(0, 5)
+        dec = decade(column[idx])
+        candidates = [n for n in hot if decade(n) == dec and n not in column]
+        if candidates:
+            column[idx] = random.choice(candidates)
+
+    return sorted(column)
 
 def score_column(col, hot, cold, pair_stats):
     score = 0
@@ -109,9 +119,7 @@ def score_column(col, hot, cold, pair_stats):
         score += pair_stats.get((a, b), 0) * 0.05
     return round(score, 2)
 
-# -------------------------------------------------
-# CSV Yükleme
-# -------------------------------------------------
+# -------------------- CSV Yükleme --------------------
 uploaded_file = st.file_uploader(
     "📂 CSV dosyasını yükle (T1–T6 veya S1–S6 desteklenir)",
     type="csv"
@@ -124,7 +132,6 @@ if uploaded_file:
     total_rows = len(df_raw)
     st.write(f"📄 CSV okundu → **{total_rows} satır bulundu**")
 
-    # Kolon isimlerini temizle
     df_raw.columns = [c.strip().upper() for c in df_raw.columns]
 
     s_cols = ["S1", "S2", "S3", "S4", "S5", "S6"]
@@ -151,9 +158,7 @@ if uploaded_file:
     st.success(f"✅ **{after} çekiliş başarıyla işlendi**")
     st.divider()
 
-    # -------------------------------------------------
-    # Analizler
-    # -------------------------------------------------
+    # -------------------- Analiz --------------------
     st.subheader("📊 En Çok Çıkan Dizilişler")
     pattern_counts, pattern_list = analyze_patterns(df)
     for p, c in pattern_counts.most_common(3):
@@ -174,9 +179,7 @@ if uploaded_file:
         st.write(f"{pair} → {c} kez")
     st.divider()
 
-    # -------------------------------------------------
-    # Örüntü Analizi ve Kolon Üretimi
-    # -------------------------------------------------
+    # -------------------- Örüntü Analizi ve Kolon Üretimi --------------------
     transitions = build_transition(pattern_list)
     last_pattern = pattern_list[-1]
     predicted_pattern = predict_next_pattern(last_pattern, transitions)
