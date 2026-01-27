@@ -8,12 +8,12 @@ from itertools import combinations
 # Sayfa Ayarları
 # ------------------------
 st.set_page_config(
-    page_title="🎯 Sayısal Loto Botu (Ondalık & Pattern Garantili)",
+    page_title="🎯 Sayısal Loto Botu (Pattern Garantili)",
     page_icon="🎯",
     layout="wide"
 )
 
-st.title("🎯 Sayısal Loto Botu (Tam Pattern Garantili)")
+st.title("🎯 Sayısal Loto Botu (Pattern Garantili)")
 st.caption("Ondalık diziliş • Örüntü • Sıcak / Soğuk • Favori kolon")
 st.divider()
 
@@ -21,7 +21,6 @@ st.divider()
 # Yardımcı Fonksiyonlar
 # ------------------------
 def decade(n):
-    """Sayıyı ondalığına göre gruplar (0–9 → 0, 10–19 → 1, ...)"""
     return (n-1)//10
 
 def pattern_from_numbers(numbers):
@@ -37,12 +36,10 @@ def pattern_from_numbers(numbers):
     return "-".join(map(str, counts))
 
 def analyze_patterns(df):
-    """Tüm çekilişlerde pattern çıkarır"""
     pattern_list = df.apply(lambda r: pattern_from_numbers(r.values), axis=1)
     return Counter(pattern_list), pattern_list.tolist()
 
 def frequency_analysis(df):
-    """Sıcak, nötr, soğuk sayıları ayırır"""
     freq = Counter(df.values.flatten())
     avg = sum(freq.values())/len(freq)
     hot = [n for n,f in freq.items() if f>avg*1.3]
@@ -51,7 +48,6 @@ def frequency_analysis(df):
     return hot, neutral, cold, freq
 
 def pair_analysis(df):
-    """Birlikte çıkan sayı ikilileri"""
     pair_counter = Counter()
     for row in df.values:
         for a,b in combinations(sorted(row),2):
@@ -69,16 +65,16 @@ def generate_column_by_pattern(pattern, hot, neutral, cold, pair_stats, t_weight
         possible_decades = [d for d in range(9)]
         d = random.choice(possible_decades)
 
-        # Bu ondalıktaki sayılar
+        # Ondalık içindeki sayılar
         pool = [n for n in range(d*10+1,d*10+11) if n not in used_numbers]
 
-        # Pozisyon baskısı
+        # Pozisyon ağırlığı
         weighted_pool = []
         for n in pool:
             weight = t_weights[idx].get(n,1)
             weighted_pool.extend([n]*weight)
 
-        # Önce nötr, sonra sıcak, sonra cold
+        # Tercih sırası: nötr -> sıcak -> cold
         preferred = [n for n in weighted_pool if n in neutral]
         if len(preferred)>=size:
             picks = random.sample(preferred,size)
@@ -134,7 +130,7 @@ if uploaded_file:
     st.write(f"📄 {len(df)} çekiliş işlendi")
 
     # ------------------------
-    # Pattern & istatistik
+    # Pattern & İstatistik
     # ------------------------
     pattern_counts, pattern_list = analyze_patterns(df)
     hot, neutral, cold, freq = frequency_analysis(df)
@@ -158,7 +154,7 @@ if uploaded_file:
         st.write(f"{pattern} → {col} | Puan: {score}")
 
     # ------------------------
-    # Favori kolon (son örüntüye göre)
+    # Favori kolon (örüntüye göre)
     # ------------------------
     next_pattern = predict_next_pattern_by_history(pattern_list, window=2)
     fav_col = generate_column_by_pattern(next_pattern, hot, neutral, cold, pair_stats, t_weights)
@@ -167,4 +163,4 @@ if uploaded_file:
     st.success(f"{fav_col} | Pattern: {next_pattern} | Puan: {fav_score}")
 
 else:
-    st.info("👆 Başlamak için CSV yükle")
+    st.info("👆 Başlamak için CSV yükle") 
