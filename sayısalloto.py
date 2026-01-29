@@ -127,7 +127,7 @@ if uploaded_file is not None:
         st.subheader("🔗 Sinerji")
         gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1,91) for j in range(i+1,91) if co_matrix_global[i][j] > 8]
         st.table(pd.DataFrame(sorted(gp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Global']))
-        with t3:
+    with t3:
         st.subheader("💤 Pusuda Bekleyenler")
         pusu_list = []
         for i in range(1, 91):
