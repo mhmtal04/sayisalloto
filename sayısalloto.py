@@ -16,13 +16,18 @@ if uploaded_file is not None:
     draws = df[cols].values
 
     # --- 1. DERİN ANALİZ KATMANLARI ---
+      
+    # A. Birlikte Çıkma Matrisi (Korelasyon) - GÜVENLİ VERSİYON
+    co_matrix = np.zeros((100, 100)) # Sınırı biraz genişletelim (Hata payı)
     
-    # A. Birlikte Çıkma Matrisi (Korelasyon)
-    co_matrix = np.zeros((91, 91))
     for draw in draws:
-        for i in range(len(draw)):
-            for j in range(i + 1, len(draw)):
-                n1, n2 = draw[i], draw[j]
+        # Satırdaki verileri temizle: Sadece 1-90 arası tam sayıları al, boşlukları ele
+        clean_draw = [int(n) for n in draw if pd.notnull(n) and str(n).replace('.0','').isdigit()]
+        clean_draw = [n for n in clean_draw if 0 < n < 100]
+        
+        for i in range(len(clean_draw)):
+            for j in range(i + 1, len(clean_draw)):
+                n1, n2 = clean_draw[i], clean_draw[j]
                 co_matrix[n1][n2] += 1
                 co_matrix[n2][n1] += 1
 
