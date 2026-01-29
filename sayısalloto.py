@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Zaman Ayarlı Master", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v24", layout="wide")
 
 # Öngörü kutularının tasarımını birebir taklit eden CSS
 st.markdown("""
@@ -20,8 +20,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Zaman Ayarlı Master Analist Botu")
-st.markdown("Bot; 1. satırı **en güncel çekiliş** kabul ederek tüm analizleri buna göre senkronize eder.")
+st.title("🛡️ Master Analist - Zaman Ayarlı & Görsel Panel")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
@@ -29,10 +28,10 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     
-    # --- YENİ: SON ÇEKİLİŞ PANELİ ---
+    # 1. SATIR: EN GÜNCEL ÇEKİLİŞ SONUÇLARINI GÖSTER
     last_draw = df.iloc[0]
     last_date = last_draw['Tarih'] if 'Tarih' in df.columns else "Bilinmiyor"
-    
+
     st.subheader(f"📅 Son Çekiliş Sonuçları ({last_date})")
     res_html = '<div class="result-row">'
     for c in cols:
@@ -45,19 +44,20 @@ if uploaded_file is not None:
     st.markdown(res_html, unsafe_allow_html=True)
     st.divider()
 
-    # 1. VERİ TEMİZLEME
+    # 2. VERİ TEMİZLEME VE ANALİZ KATMANLARI
     draws_raw = df[cols].values
     draws = []
     for row in draws_raw:
-        clean_row = [int(x) for x in row if pd.notnull(x)]
+        clean_row = [int(x) for x in row if pd.notnull(x) and str(x).replace('.0','').isdigit()]
         if len(clean_row) == 6: draws.append(clean_row)
     draws = np.array(draws) 
 
-    # 2. ANALİZ KATMANLARI
+    # BEKLEME SÜRESİ (Last Seen) - 0. İndeks = En Yeni
     last_seen = {}
     for i, d in enumerate(draws):
         for n in d:
-            if n not in last_seen: last_seen[n] = i
+            if n not in last_seen:
+                last_seen[n] = i
 
     co_matrix_global = np.zeros((91, 91))
     co_matrix_trend = np.zeros((91, 91))
@@ -71,7 +71,6 @@ if uploaded_file is not None:
 
     pos_freq = {c: Counter(df[c]) for c in cols}
     
-    # 3. MARKOV VE MUHAKEME
     def get_pattern(draw):
         counts, _ = np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])
         return tuple(counts)
@@ -80,13 +79,17 @@ if uploaded_file is not None:
     successors = [all_patterns[i] for i in range(len(all_patterns)-1) if all_patterns[i+1] == last_p]
     predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
 
+    # 3. MASTER MUHAKEME MOTORU
     def get_master_score(n, pos_idx, current_res):
         pos_name = cols[pos_idx]
+        region_idx = (n-1) // 10
         score = (pos_freq[pos_name][n] * 0.4) + (last_seen.get(n, 0) * 0.1)
         if current_res:
             for prev in current_res:
                 n1, n2 = sorted([n, prev])
                 score += (co_matrix_global[n1][n2] * 1.0) + (co_matrix_trend[n1][n2] * 3.0)
+                if last_seen.get(n, 0) > 20 and last_seen.get(prev, 0) > 20:
+                    if co_matrix_global[n1][n2] > 5: score += 50
         return score
 
     def make_col(p, offset=0):
@@ -99,11 +102,10 @@ if uploaded_file is not None:
                 res.extend(cands[offset : offset + count])
         return sorted(res[:6])
 
-    # --- ARAYÜZ DEVAMI ---
+    # --- ALT PANELLER ---
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.subheader("🔮 Strateji")
-        st.write(f"Tahmin Dizilişi: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
+        st.subheader("🔮 Öngörü")
         st.success(f"🥇 1. Kolon: `{make_col(predicted_pattern, 0)}`")
         st.info(f"🥈 2. Kolon: `{make_col(predicted_pattern, 2)}`")
 
@@ -120,14 +122,15 @@ if uploaded_file is not None:
         st.table(pd.DataFrame(sorted(tp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Trend']))
     with t2:
         st.subheader("🔗 Sinerji")
-        gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1,91) for j in range(i+1,91) if co_matrix_global[i][j] > 8]
+        gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1, 91) for j in range(i+1, 91) if co_matrix_global[i][j] > 8]
         st.table(pd.DataFrame(sorted(gp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Global']))
     with t3:
         st.subheader("💤 Pusuda Bekleyenler")
-        pl = []
+        pusu_list = []
         for i in range(1, 91):
             for j in range(i+1, 91):
                 if co_matrix_global[i][j] > 8:
-                    ob = (last_seen.get(i, 0) + last_seen.get(j, 0)) // 2
-                    if ob > 20: pl.append((f"{i} - {j}", int(co_matrix_global[i][j]), ob))
-        st.table(pd.DataFrame(sorted(pl, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Güç', 'Çekiliş Önce']))
+                    ort_bekleme = (last_seen.get(i, 0) + last_seen.get(j, 0)) // 2
+                    if ort_bekleme > 20:
+                        pusu_list.append((f"{i} - {j}", int(co_matrix_global[i][j]), ort_bekleme))
+        st.table(pd.DataFrame(sorted(pusu_list, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Güç', 'Çekiliş Önce']))
