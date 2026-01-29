@@ -3,128 +3,127 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Pro Loto Analist v11", layout="wide")
+st.set_page_config(page_title="Pattern Master AI - Pro", layout="wide")
 
-st.title("🛡️ Profesyonel Stratejik Analiz Botu")
-st.markdown("854 çekilişlik veriyi **Birlikte Çıkma**, **Pozisyonel Güç** ve **Lag** analiziyle işler.")
+st.title("🧩 Stratejik Örüntü Analizli Loto Botu (Gelişmiş)")
+st.markdown("Bu bot, dizilişleri birer 'zincir' olarak analiz eder, **birlikte çıkma (sinerji)** ve **pozisyonel güç** verilerini kullanarak tahmin yapar.")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
-    draws = df[cols].values
-
-    # --- 1. DERİN ANALİZ KATMANLARI ---
-      
-    # A. Birlikte Çıkma Matrisi (Korelasyon) - GÜVENLİ VERSİYON
-    co_matrix = np.zeros((100, 100)) # Sınırı biraz genişletelim (Hata payı)
     
-    for draw in draws:
-        # Satırdaki verileri temizle: Sadece 1-90 arası tam sayıları al, boşlukları ele
-        clean_draw = [int(n) for n in draw if pd.notnull(n) and str(n).replace('.0','').isdigit()]
-        clean_draw = [n for n in clean_draw if 0 < n < 100]
-        
-        for i in range(len(clean_draw)):
-            for j in range(i + 1, len(clean_draw)):
-                n1, n2 = clean_draw[i], clean_draw[j]
-                co_matrix[n1][n2] += 1
-                co_matrix[n2][n1] += 1
+    # Veri Temizleme: Boşlukları ve hatalı sayıları ayıkla
+    draws_raw = df[cols].values
+    draws = []
+    for row in draws_raw:
+        clean_row = [int(x) for x in row if pd.notnull(x) and str(x).replace('.0','').isdigit()]
+        if len(clean_row) == 6:
+            draws.append(clean_row)
+    draws = np.array(draws)
 
-    # B. Pozisyonel Frekans (T1-T6 başarısı)
+    # --- EKSTRA ANALİZ KATMANLARI ---
+    # 1. Birlikte Çıkma Matrisi (Sinerji)
+    co_matrix = np.zeros((91, 91))
+    for d in draws:
+        for i in range(len(d)):
+            for j in range(i + 1, len(d)):
+                n1, n2 = d[i], d[j]
+                if 0 < n1 < 91 and 0 < n2 < 91:
+                    co_matrix[n1][n2] += 1
+                    co_matrix[n2][n1] += 1
+
+    # 2. Pozisyonel Frekans (T1-T6 başarısı)
     pos_freq = {c: Counter(df[c]) for c in cols}
 
-    # C. Lag (Bekleme Süresi) Analizi
-    last_seen = {n: i for i, d in enumerate(draws) for n in d}
+    # 3. Temel İstatistikler
     all_nums = draws.flatten()
-    global_freq = Counter(all_nums)
+    freq = Counter(all_nums)
+    last_seen = {n: i for i, d in enumerate(draws) for n in d}
 
-    # --- 2. ÖRÜNTÜ GEÇİŞ ANALİZİ (MEVCUT YAPI) ---
-    all_patterns = []
+    # --- ÖRÜNTÜ GEÇİŞ ANALİZİ (MARKOV) ---
     def get_pattern(draw):
         counts, _ = np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])
         return tuple(counts)
 
-    for d in draws: all_patterns.append(get_pattern(d))
-    
+    all_patterns = [get_pattern(d) for d in draws]
     last_p = all_patterns[0]
-    successors = [all_patterns[i] for i in range(len(all_patterns)-1) if all_patterns[i+1] == last_p]
-    predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
+    successors = [all_patterns[i] for i in range(len(all_patterns) - 1) if all_patterns[i+1] == last_p]
+    
+    if successors:
+        predicted_pattern = Counter(successors).most_common(1)[0][0]
+        prediction_method = "Örüntü Geçiş Analizi (Markov Chain)"
+    else:
+        predicted_pattern = Counter(all_patterns).most_common(1)[0][0]
+        prediction_method = "Genel En Çok Çıkan Diziliş"
 
-    # --- 3. GELİŞTİRİLMİŞ PUANLAMA (SİNERJİ ODAKLI) ---
-    def get_serious_score(n, position_idx, current_col):
-        pos_name = cols[position_idx]
-        # Temel Puan: Pozisyonel Başarı + Bekleme Süresi
-        score = (pos_freq[pos_name][n] * 0.5) + (last_seen.get(n, 100) * 0.5)
+    # --- GELİŞMİŞ SAYI PUANLAMA ---
+    def get_pro_score(n, pos_idx, current_res):
+        pos_name = cols[pos_idx]
+        # 1. Pozisyonel Başarı + Bekleme Süresi (%70)
+        score = (pos_freq[pos_name][n] * 0.4) + (last_seen.get(n, 100) * 0.6)
         
-        # Sinerji: Seçilen diğer sayılarla daha önce kaç kez çıktı?
-        if current_col:
-            synergy = sum([co_matrix[n][prev] for prev in current_col])
-            score += (synergy * 2.0) # Beraber çıkma ağırlığı
-        
-        # Otonom Filtre: Son 15 çekilişte doygunluk (Senin sezginin kodu)
-        recent_count = np.sum(draws[:15] == n)
-        if recent_count >= 3: score -= 300 # 40 gibi sayılar elenir
-        
-        # Bölge Yoğunluk Cezası: Eğer son 10 çekilişte bu bölge çok çıktıysa (20'ler gibi)
-        region_idx = (n-1) // 10
-        region_saturation = np.sum([p[region_idx] for p in all_patterns[:10]])
-        if region_saturation > 4: score -= 50 # Bölge nadasa bırakılır
+        # 2. Sinerji (Seçilen diğer sayılarla uyumu - %30)
+        if current_res:
+            synergy = sum([co_matrix[n][prev] for prev in current_res])
+            score += synergy * 1.5
             
+        # 3. Dinamik Filtre: Son 15 çekiliş doygunluk cezası (20'ler ve 40 kuralı)
+        recent_count = np.sum(draws[:15] == n)
+        if recent_count >= 3: score -= 200 
+        
         return score
 
-    # --- 4. AKILLI KOLON ÜRETİMİ ---
-    def make_serious_col(pattern, rank_offset=0):
+    # --- KOLON ÜRETİMİ ---
+    def make_col_pro(p, rank=0):
         res = []
         bins = [1, 11, 21, 31, 41, 51, 61, 71, 81, 91]
-        
-        # Her bölge için sırayla sayı seç
-        for i, count in enumerate(pattern):
+        for i, count in enumerate(p):
             if count > 0:
-                candidates = [n for n in range(bins[i], bins[i+1])]
-                # Seçilen sayılarla sinerjisine göre sırala
-                candidates.sort(key=lambda x: get_serious_score(x, i if i<6 else 5, res), reverse=True)
-                
-                # Çeşitlilik için offset kullan
-                start = rank_offset % len(candidates)
-                res.extend(candidates[start : start + count])
-        return sorted(list(set(res))[:6])
+                candidates = [n for n in range(bins[i], bins[i+1]) if n not in res]
+                # Sinerji ve pozisyon puanına göre sırala
+                candidates.sort(key=lambda x: get_pro_score(x, i if i<6 else 5, res), reverse=True)
+                res.extend(candidates[rank : rank + count])
+        return sorted(res[:6])
 
-    # --- ARAYÜZ ---
+    # --- PANEL GÖRÜNÜMÜ ---
     st.divider()
-    col_left, col_right = st.columns([1, 2])
+    c1, c2 = st.columns([1, 2])
 
-    with col_left:
-        st.subheader("🕵️ Veri Madenciliği Raporu")
-        st.write(f"Son Çekiliş Dizilişi: `{'-'.join(map(str, [x for x in last_p if x>0]))}`")
-        st.success(f"Tahmin Edilen Diziliş: `{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}`")
+    with c1:
+        st.subheader("🔮 Tahmin Algoritması")
+        st.write(f"Son Çekiliş Dizilişi: **{'-'.join(map(str, [x for x in last_p if x>0]))}**")
+        st.success(f"Tahmin Edilen Bir Sonraki Diziliş: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
+        st.info(f"Yöntem: {prediction_method}")
         
-        # En çok bekleyen 3 sayı
+        # Ekstra: En çok bekleyenler
         waiting = sorted(last_seen.items(), key=lambda x: x[1], reverse=True)[:3]
-        st.info(f"En Çok Bekleyenler: {', '.join([str(x[0]) for x in waiting])}")
+        st.warning(f"🚨 En Çok Bekleyen Sayılar: {', '.join([str(x[0]) for x in waiting])}")
 
-    with col_right:
-        st.subheader("🏆 Stratejik Altın Kolonlar")
-        k1 = make_serious_col(predicted_pattern, 0)
-        k2 = make_serious_col(predicted_pattern, 1)
-        
+    with c2:
+        st.subheader("🎰 Üretilen Stratejik Kolonlar")
+        k1 = make_col_pro(predicted_pattern, 0)
+        k2 = make_col_pro(predicted_pattern, 1)
         st.markdown(f"### 🥇 1. Kolon (Maksimum Sinerji): `{k1}`")
-        st.write("*(Bu kolon, sayılar arasındaki tarihsel bağları ve pozisyonel gücü esas alır.)*")
-        
-        st.markdown(f"### 🥈 2. Kolon (Yüksek Potansiyel): `{k2}`")
-        st.write("*(Bu kolon, 'ikinci en iyi' sinerjiye sahip alternatifleri değerlendirir.)*")
+        st.markdown(f"### 🥈 2. Kolon (Alternatif Güç): `{k2}`")
+        st.caption("Not: Bu kolonlar pozisyonel başarı ve sayıların birlikte çıkma oranlarına göre optimize edilmiştir.")
 
-    # Korelasyon Görseli (Top 5 İkili)
+    # --- GRAFİKLER ---
     st.divider()
-    st.subheader("🔗 Birlikte Çıkmayı Seven 'İkilem' Sayılar")
-    pairs = []
-    for i in range(1, 91):
-        for j in range(i+1, 91):
-            if co_matrix[i][j] > 0:
-                pairs.append((i, j, co_matrix[i][j]))
+    g1, g2 = st.columns(2)
     
-    top_pairs = sorted(pairs, key=lambda x: x[2], reverse=True)[:5]
-    for p in top_pairs:
-        st.write(f"🔹 **{p[0]}** ve **{p[1]}** sayıları toplam **{int(p[2])}** kez beraber çıktı.")
+    with g1:
+        st.subheader("📈 En Sık Görülen 5 Diziliş Tipi")
+        p_counts = Counter(["-".join(map(str, [x for x in p if x>0])) for p in all_patterns])
+        st.bar_chart(pd.DataFrame(p_counts.most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş'))
 
- 
+    with g2:
+        st.subheader("🔗 Birlikte Çıkmayı Seven İkililer")
+        pairs = []
+        for i in range(1, 91):
+            for j in range(i+1, 91):
+                if co_matrix[i][j] > 0:
+                    pairs.append((f"{i}-{j}", co_matrix[i][j]))
+        top_pairs = sorted(pairs, key=lambda x: x[1], reverse=True)[:5]
+        st.table(pd.DataFrame(top_pairs, columns=['Sayı Çifti', 'Birlikte Çıkma Sayısı']))
