@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Zaman Ayarlı Master", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v26", layout="wide")
 
-# Tasarım CSS (Sonuçları yatay ve şık yapar)
+# Tasarım CSS (Sonuç kutuları)
 st.markdown("""
     <style>
     .result-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 25px 0; }
@@ -27,7 +27,7 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     
-    # --- 1. SON ÇEKİLİŞ SONUÇLARI PANELİ ---
+    # 1. SON ÇEKİLİŞ PANELİ
     last_draw = df.iloc[0]
     last_date = last_draw['Tarih'] if 'Tarih' in df.columns else "Bilinmiyor"
     
@@ -43,15 +43,14 @@ if uploaded_file is not None:
     st.markdown(res_html, unsafe_allow_html=True)
     st.divider()
 
-    # --- 2. VERİ HAZIRLIĞI VE ANALİZ ---
+    # 2. VERİ TEMİZLEME VE ANALİZ
     draws_raw = df[cols].values
     draws = []
     for row in draws_raw:
         clean_row = [int(x) for x in row if pd.notnull(x)]
         if len(clean_row) == 6: draws.append(clean_row)
-    draws = np.array(draws) # 0. indeks = En yeni
+    draws = np.array(draws) 
 
-    # Bekleme ve Matrisler
     last_seen = {}
     for i, d in enumerate(draws):
         for n in d:
@@ -78,7 +77,7 @@ if uploaded_file is not None:
     successors = [all_patterns[i] for i in range(len(all_patterns)-1) if all_patterns[i+1] == last_p]
     predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
 
-    # Skorlama Motoru (Senin Filtrelerin)
+    # 3. MASTER SKORLAMA (Senin Orijinal Filtrelerin)
     def get_master_score(n, pos_idx, current_res):
         region_idx = (n-1) // 10
         score = (pos_freq[cols[pos_idx]][n] * 0.4) + (last_seen.get(n, 0) * 0.1)
@@ -103,7 +102,7 @@ if uploaded_file is not None:
                 res.extend(cands[offset : offset + count])
         return sorted(res[:6])
 
-    # --- 3. ARAYÜZ KATMANLARI ---
+    # 4. ARAYÜZ
     c1, c2 = st.columns([1, 2])
     with c1:
         st.subheader("🔮 Öngörü")
@@ -116,18 +115,18 @@ if uploaded_file is not None:
         pos_data = {c: [f"{num} ({count})" for num, count in pos_freq[c].most_common(5)] for c in cols}
         st.table(pd.DataFrame(pos_data))
 
-    # --- YENİ: DİZİLİŞ GRAFİĞİ ---
+    # --- GRAFİK BÖLÜMÜ (HATA KORUMALI) ---
     st.divider()
-    st.subheader("📈 En Popüler Diziliş Tipleri (Pattern Analysis)")
-    # Dizilişleri string formatına çevirip sayıyoruz (Örn: 1-1-1-1-1-1)
-    pattern_labels = ["-".join(map(str, [x for x in p if x>0])) for p in all_patterns]
-    pattern_counts = Counter(pattern_labels).most_common(5)
-    
-    chart_df = pd.DataFrame(pattern_counts, columns=['Diziliş Şablonu', 'Görülme Sıklığı']).set_index('Diziliş Şablonu')
-    st.bar_chart(chart_df)
-    
+    st.subheader("📈 En Popüler Diziliş Tipleri")
+    try:
+        # Tuple'ı string'e çevirip Pandas'a veriyoruz (Hata payı sıfır)
+        pat_list = [str(list(p)) for p in all_patterns]
+        chart_df = pd.Series(pat_list).value_counts().head(5)
+        st.bar_chart(chart_df)
+    except Exception as e:
+        st.warning("Grafik oluşturulurken bir veri uyumsuzluğu oluştu, analizler devam ediyor.")
 
-    # --- ANALİZ TABLOLARI ---
+    # --- ALT TABLOLAR ---
     st.divider()
     t1, t2, t3 = st.columns(3)
     with t1:
