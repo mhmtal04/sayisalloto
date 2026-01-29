@@ -65,7 +65,14 @@ if uploaded_file is not None:
 
     # --- ANALİZ KATMANLARI ---
     draws = df[cols].dropna().astype(int).values
-    last_seen = {n: i for i, d in enumerate(draws) for n in d}
+    
+    # --- BURASI DÜZELTİLDİ: 851 Hatasının Çözümü ---
+    last_seen = {}
+    for i, d in enumerate(draws):
+        for n in d:
+            if n not in last_seen: # Eğer sayı daha önce görülmediyse (yani en yeni hali buysa) kaydet
+                last_seen[n] = i
+    # ----------------------------------------------
     
     co_matrix_global = np.zeros((91, 91))
     co_matrix_trend = np.zeros((91, 91))
@@ -133,8 +140,6 @@ if uploaded_file is not None:
         for i in range(1, 91):
             for j in range(i+1, 91):
                 if co_matrix_global[i][j] > 8:
-                    # 'Bekleme' artık 'Son beraber çıkıştan beri geçen çekiliş sayısı'
-                    # Her iki sayının da son görüldüğü tarihlere bakıyoruz
                     ort_bekleme = (last_seen.get(i, 0) + last_seen.get(j, 0)) // 2
                     if ort_bekleme > 20:
                         pusu_list.append((f"{i} - {j}", int(co_matrix_global[i][j]), ort_bekleme))
