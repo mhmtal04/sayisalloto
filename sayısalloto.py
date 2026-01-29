@@ -127,7 +127,15 @@ if uploaded_file is not None:
         st.subheader("🔗 Sinerji")
         gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1,91) for j in range(i+1,91) if co_matrix_global[i][j] > 8]
         st.table(pd.DataFrame(sorted(gp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Global']))
-    with t3:
-        st.subheader("💤 Pusu")
-        pl = [(f"{i}-{j}", int(co_matrix_global[i][j]), (last_seen.get(i,0)+last_seen.get(j,0))//2) for i in range(1,91) for j in range(i+1,91) if co_matrix_global[i][j] > 8]
-        st.table(pd.DataFrame(sorted([p for p in pl if p[2]>20], key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Güç', 'Bekleme']))
+        with t3:
+        st.subheader("💤 Pusuda Bekleyenler")
+        pusu_list = []
+        for i in range(1, 91):
+            for j in range(i+1, 91):
+                if co_matrix_global[i][j] > 8:
+                    # 'Bekleme' artık 'Son beraber çıkıştan beri geçen çekiliş sayısı'
+                    # Her iki sayının da son görüldüğü tarihlere bakıyoruz
+                    ort_bekleme = (last_seen.get(i, 0) + last_seen.get(j, 0)) // 2
+                    if ort_bekleme > 20:
+                        pusu_list.append((f"{i} - {j}", int(co_matrix_global[i][j]), ort_bekleme))
+        st.table(pd.DataFrame(sorted(pusu_list, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Güç', 'Çekiliş Önce']))
