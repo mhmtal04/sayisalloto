@@ -3,27 +3,39 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Master Analist v16", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v17", layout="wide")
 
-st.title("🛡️ Master Analist - Tam Donanımlı Loto Botu")
-st.markdown("Bot; 1. satırı (indeks 0) **en güncel çekiliş** kabul eder. Tüm trend, pusu ve diziliş analizleri aktiftir.")
+st.title("🛡️ Master Analist - Yatay Görünüm & Tam Analiz")
+st.markdown("Bot; 1. satırı (indeks 0) **en güncel çekiliş** kabul eder ve tüm tabloları buna göre senkronize eder.")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
 if uploaded_file is not None:
-    # 0. VERİ OKUMA VE SON ÇEKİLİŞ GÖSTERGESİ
+    # 0. VERİ OKUMA VE SON ÇEKİLİŞ GÖSTERGESİ (YATAY)
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     
-    # Son çekiliş bilgilerini en üste çekiyoruz
+    # Son çekiliş bilgileri (Indeks 0 = Dosyadaki 2. satır)
     last_draw_data = df.iloc[0] 
     last_numbers = [int(last_draw_data[c]) for c in cols]
     last_date = last_draw_data['Tarih'] if 'Tarih' in df.columns else "Bilinmiyor"
 
+    # YATAY GÖSTERİM ALANI
     st.subheader(f"📅 Son Çekiliş Sonuçları ({last_date})")
-    cols_display = st.columns(6)
-    for idx, num in enumerate(last_numbers):
-        cols_display[idx].metric(label=f"T{idx+1}", value=num)
+    # Sayıları yan yana şık bir kutu içinde gösterelim
+    st.markdown(
+        f"""
+        <div style="background-color: #1e2129; padding: 20px; border-radius: 10px; border: 1px solid #4a4d55; text-align: center;">
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T1: {last_numbers[0]}</span>
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T2: {last_numbers[1]}</span>
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T3: {last_numbers[2]}</span>
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T4: {last_numbers[3]}</span>
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T5: {last_numbers[4]}</span>
+            <span style="font-size: 24px; font-weight: bold; color: #ff4b4b; margin: 0 15px;">T6: {last_numbers[5]}</span>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     
     st.divider()
 
@@ -39,7 +51,7 @@ if uploaded_file is not None:
     co_matrix_global = np.zeros((91, 91))
     co_matrix_trend = np.zeros((91, 91))
     
-    # Bekleme süresi hesabı (0 = En güncel çekilişte çıktı)
+    # Bekleme süresi (Last Seen) - 0 = En güncel
     last_seen = {}
     for i, d in enumerate(draws):
         for n in d:
@@ -112,7 +124,6 @@ if uploaded_file is not None:
         st.table(pd.DataFrame(pos_data))
 
     st.divider()
-    # Diziliş Grafiği Geri Geldi
     st.subheader("📈 En Popüler 5 Diziliş Tipi")
     p_counts = Counter(["-".join(map(str, [x for x in p if x>0])) for p in all_patterns])
     st.bar_chart(pd.DataFrame(p_counts.most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş'))
