@@ -8,7 +8,7 @@ st.set_page_config(page_title="Loto AI - Master Reasoning", layout="wide")
 st.title("🛡️ Master Muhakeme Yetenekli Loto Botu")
 st.markdown("""
 Bu bot; **Hibrit Trend Analizi**, **Pusu Skoru** ve **Pozisyonel Güç** verilerini harmanlar. 
-Sadece istatistiğe değil, sayıların arasındaki 'sosyal ilişkilere' göre karar verir.
+En popüler dizilişleri ve sayısal ilişkileri analiz ederek kupon üretir.
 """)
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
@@ -26,7 +26,6 @@ if uploaded_file is not None:
     draws = np.array(draws)
 
     # 2. DERİN ANALİZ KATMANLARI
-    # A. Global & Trend Sinerji Matrisleri
     co_matrix_global = np.zeros((91, 91))
     co_matrix_trend = np.zeros((91, 91)) # Son 50 çekiliş
     
@@ -37,11 +36,10 @@ if uploaded_file is not None:
                 if 0 < n1 < 91 and 0 < n2 < 91:
                     co_matrix_global[n1][n2] += 1
                     co_matrix_global[n2][n1] += 1
-                    if idx < 50: # Son 50 çekiliş 'Moda' analizi
+                    if idx < 50:
                         co_matrix_trend[n1][n2] += 1
                         co_matrix_trend[n2][n1] += 1
 
-    # B. Pozisyonel Başarı ve Bekleme Süresi
     pos_freq = {c: Counter(df[c]) for c in cols}
     last_seen = {n: i for i, d in enumerate(draws) for n in d}
     
@@ -49,6 +47,7 @@ if uploaded_file is not None:
     def get_pattern(draw):
         counts, _ = np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])
         return tuple(counts)
+    
     all_patterns = [get_pattern(d) for d in draws]
 
     # 3. MARKOV ZİNCİRİ (ÖRÜNTÜ TAHMİNİ)
@@ -56,37 +55,29 @@ if uploaded_file is not None:
     successors = [all_patterns[i] for i in range(len(all_patterns) - 1) if all_patterns[i+1] == last_p]
     predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
 
-    # 4. BOTUN GELİŞMİŞ MUHAKEME (REASONING) MOTORU
+    # 4. MASTER MUHAKEME MOTORU
     def get_master_score(n, pos_idx, current_res):
         pos_name = cols[pos_idx]
         region_idx = (n-1) // 10
-        
-        # Temel Puan: Pozisyon Başarısı (%40) + Gecikme Süresi (%60)
         score = (pos_freq[pos_name][n] * 0.4) + (last_seen.get(n, 100) * 0.6)
         
         if current_res:
             for prev in current_res:
-                # A. Hibrit Sinerji: Tüm zamanlar (1x) + Son 50 Trend (3x)
-                global_syn = co_matrix_global[n][prev]
-                trend_syn = co_matrix_trend[n][prev]
-                score += (global_syn * 1.0) + (trend_syn * 3.0)
-                
-                # B. Pusu Bonusu: İki sayı partnerse ve ikisi de soğuksa (Pusuya yatmışlarsa)
+                # Hibrit Sinerji
+                score += (co_matrix_global[n][prev] * 1.0) + (co_matrix_trend[n][prev] * 3.0)
+                # Pusu Bonusu (Soğuk Partnerler)
                 if last_seen.get(n, 0) > 20 and last_seen.get(prev, 0) > 20:
-                    if global_syn > 5:
-                        score += global_syn * 4.0 # Geri dönüş ihtimalini ödüllendir
+                    if co_matrix_global[n][prev] > 5:
+                        score += co_matrix_global[n][prev] * 4.0
             
-            # C. Bölgesel Fren: 20'ler veya 70'ler gibi gruplar doyduysa ikilem sayıyı engelle
+            # Bölgesel Fren (Nadas)
             same_region_count = sum(1 for s in current_res if (s-1)//10 == region_idx)
             if same_region_count >= 1:
                 recent_activity = np.sum([p[region_idx] for p in all_patterns[:15]])
-                if recent_activity > 4:
-                    score -= 250 # Bölge nadasa bırakılır
+                if recent_activity > 4: score -= 250
         
-        # D. Isı Filtresi: Son 15 çekilişte 3+ kez çıkan sayıya ağır ceza
-        if np.sum(draws[:15] == n) >= 3:
-            score -= 400
-            
+        # Isı Filtresi
+        if np.sum(draws[:15] == n) >= 3: score -= 400
         return score
 
     # 5. KOLON ÜRETİMİ
@@ -100,47 +91,44 @@ if uploaded_file is not None:
                 res.extend(candidates[rank_offset : rank_offset + count])
         return sorted(res[:6])
 
-    # --- ARAYÜZ TASARIMI ---
+    # --- PANEL ---
     st.divider()
     c1, c2 = st.columns([1, 2])
-
     with c1:
-        st.subheader("🔮 Stratejik Analiz Raporu")
-        st.info(f"Yöntem: **Hibrit Markov & Pusu Analizi**")
+        st.subheader("🔮 Stratejik Analiz")
         st.write(f"Tahmin Edilen Diziliş: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
-        
         waiting = sorted(last_seen.items(), key=lambda x: x[1], reverse=True)[:3]
         st.warning(f"🚨 En Çok Bekleyenler: {', '.join([str(x[0]) for x in waiting])}")
 
     with c2:
-        st.subheader("🎰 Üretilen Master Kolonlar")
-        k1 = make_master_col(predicted_pattern, 0)
-        k2 = make_master_col(predicted_pattern, 2) # Sürpriz kolon için offset artırıldı
-        st.markdown(f"### 🥇 1. Kolon (Trend & Güç): `{k1}`")
-        st.markdown(f"### 🥈 2. Kolon (Pusu & Sürpriz): `{k2}`")
+        st.subheader("🎰 Master Kolonlar")
+        st.markdown(f"### 🥇 1. Kolon: `{make_master_col(predicted_pattern, 0)}`")
+        st.markdown(f"### 🥈 2. Kolon: `{make_master_col(predicted_pattern, 2)}`")
 
-    # --- İSTATİSTİK PANELLERİ ---
+    # --- GRAFİKLER VE TABLOLAR ---
+    st.divider()
+    st.subheader("📈 En Sık Görülen 5 Diziliş Tipi")
+    p_counts = Counter(["-".join(map(str, [x for x in p if x>0])) for p in all_patterns])
+    st.bar_chart(pd.DataFrame(p_counts.most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş'))
+
     st.divider()
     g1, g2 = st.columns(2)
-    
     with g1:
-        st.subheader("🔥 Son 50 Çekiliş: Moda İkililer")
+        st.subheader("🔥 Son 50: Moda İkililer")
         trend_pairs = []
         for i in range(1, 91):
             for j in range(i+1, 91):
                 if co_matrix_trend[i][j] > 0:
                     trend_pairs.append((f"{i} - {j}", int(co_matrix_trend[i][j])))
-        top_trend = sorted(trend_pairs, key=lambda x: x[1], reverse=True)[:5]
-        st.table(pd.DataFrame(top_trend, columns=['İkili', 'Trend Frekansı']))
+        st.table(pd.DataFrame(sorted(trend_pairs, key=lambda x: x[1], reverse=True)[:5], columns=['İkili', 'Trend']))
 
     with g2:
-        st.subheader("💤 Pusudaki 'Eski Dost' İkililer")
+        st.subheader("💤 Pusudaki Eski Dostlar")
         pusu_list = []
         for i in range(1, 91):
             for j in range(i+1, 91):
-                if co_matrix_global[i][j] > 8: # Güçlü bağ
+                if co_matrix_global[i][j] > 8:
                     sogukluk = (last_seen.get(i, 0) + last_seen.get(j, 0)) / 2
                     if sogukluk > 20:
                         pusu_list.append((f"{i} - {j}", int(co_matrix_global[i][j]), int(sogukluk)))
-        top_pusu = sorted(pusu_list, key=lambda x: x[1], reverse=True)[:5]
-        st.table(pd.DataFrame(top_pusu, columns=['İkili', 'Global Güç', 'Ort. Bekleme']))
+        st.table(pd.DataFrame(sorted(pusu_list, key=lambda x: x[1], reverse=True)[:5], columns=['İkili', 'Güç', 'Bekleme']))
