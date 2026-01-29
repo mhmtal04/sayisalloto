@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Master Analist v25", layout="wide")
+st.set_page_config(page_title="Loto AI - Zaman Ayarlı Master", layout="wide")
 
-# Tasarım CSS (Öngörü Kutuları Stili)
+# Tasarım CSS (Sonuçları yatay ve şık yapar)
 st.markdown("""
     <style>
     .result-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 25px 0; }
@@ -27,7 +27,7 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     
-    # 1. SON ÇEKİLİŞ PANELİ (En Üstte)
+    # --- 1. SON ÇEKİLİŞ SONUÇLARI PANELİ ---
     last_draw = df.iloc[0]
     last_date = last_draw['Tarih'] if 'Tarih' in df.columns else "Bilinmiyor"
     
@@ -43,13 +43,13 @@ if uploaded_file is not None:
     st.markdown(res_html, unsafe_allow_html=True)
     st.divider()
 
-    # 2. VERİ ANALİZ HAZIRLIĞI
+    # --- 2. VERİ HAZIRLIĞI VE ANALİZ ---
     draws_raw = df[cols].values
     draws = []
     for row in draws_raw:
         clean_row = [int(x) for x in row if pd.notnull(x)]
         if len(clean_row) == 6: draws.append(clean_row)
-    draws = np.array(draws) 
+    draws = np.array(draws) # 0. indeks = En yeni
 
     # Bekleme ve Matrisler
     last_seen = {}
@@ -73,20 +73,20 @@ if uploaded_file is not None:
         return tuple(counts)
     all_patterns = [get_pattern(d) for d in draws]
 
-    # 3. MARKOV VE GRAFİK VERİSİ
+    # Markov Tahmini
     last_p = all_patterns[0]
     successors = [all_patterns[i] for i in range(len(all_patterns)-1) if all_patterns[i+1] == last_p]
     predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
 
-    # 4. SKORLAMA VE KOLON ÜRETİMİ (Senin Filtrelerinle)
+    # Skorlama Motoru (Senin Filtrelerin)
     def get_master_score(n, pos_idx, current_res):
-        pos_name = cols[pos_idx]
         region_idx = (n-1) // 10
-        score = (pos_freq[pos_name][n] * 0.4) + (last_seen.get(n, 0) * 0.1)
+        score = (pos_freq[cols[pos_idx]][n] * 0.4) + (last_seen.get(n, 0) * 0.1)
         if current_res:
             for prev in current_res:
-                n1, n2 = sorted([n, prev])
-                score += (co_matrix_global[n1][n2] * 1.0) + (co_matrix_trend[n1][n2] * 3.0)
+                score += (co_matrix_global[n][prev] * 1.0) + (co_matrix_trend[n][prev] * 3.0)
+                if last_seen.get(n, 0) > 20 and last_seen.get(prev, 0) > 20:
+                    if co_matrix_global[n][prev] > 5: score += 50
             same_reg = sum(1 for s in current_res if (s-1)//10 == region_idx)
             if same_reg >= 1:
                 if np.sum([p[region_idx] for p in all_patterns[:15]]) > 4: score -= 250
@@ -103,7 +103,7 @@ if uploaded_file is not None:
                 res.extend(cands[offset : offset + count])
         return sorted(res[:6])
 
-    # --- ALT PANELLER ---
+    # --- 3. ARAYÜZ KATMANLARI ---
     c1, c2 = st.columns([1, 2])
     with c1:
         st.subheader("🔮 Öngörü")
@@ -116,12 +116,16 @@ if uploaded_file is not None:
         pos_data = {c: [f"{num} ({count})" for num, count in pos_freq[c].most_common(5)] for c in cols}
         st.table(pd.DataFrame(pos_data))
 
-    # --- EKSİK OLAN GRAFİK BÖLÜMÜ ---
+    # --- YENİ: DİZİLİŞ GRAFİĞİ ---
     st.divider()
-    st.subheader("📈 En Popüler 5 Diziliş Tipi (Pattern Analysis)")
-    p_counts = Counter(["-".join(map(str, [x for x in p if x>0])) for p in all_patterns])
-    chart_data = pd.DataFrame(p_counts.most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş')
-    st.bar_chart(chart_data)
+    st.subheader("📈 En Popüler Diziliş Tipleri (Pattern Analysis)")
+    # Dizilişleri string formatına çevirip sayıyoruz (Örn: 1-1-1-1-1-1)
+    pattern_labels = ["-".join(map(str, [x for x in p if x>0])) for p in all_patterns]
+    pattern_counts = Counter(pattern_labels).most_common(5)
+    
+    chart_df = pd.DataFrame(pattern_counts, columns=['Diziliş Şablonu', 'Görülme Sıklığı']).set_index('Diziliş Şablonu')
+    st.bar_chart(chart_df)
+    
 
     # --- ANALİZ TABLOLARI ---
     st.divider()
