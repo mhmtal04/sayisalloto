@@ -3,36 +3,37 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Master Analist v21", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v22", layout="wide")
 
-# CSS ile Kutuları Yan Yana Kilitleme ve Renklendirme
+# Öngörü kutularının tasarımını birebir taklit eden CSS
 st.markdown("""
     <style>
-    .loto-container {
+    .result-row {
         display: flex;
-        flex-wrap: nowrap;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 20px;
+        justify-content: flex-start;
+        gap: 8px;
+        margin: 10px 0 25px 0;
+        flex-wrap: wrap;
     }
-    .loto-box {
-        flex: 1;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        font-weight: bold;
-        min-width: 80px;
+    .result-item {
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-family: sans-serif;
+        font-weight: 600;
+        font-size: 16px;
+        border: 1px solid rgba(28, 131, 225, 0.1);
+        display: flex;
+        align-items: center;
+        min-width: 100px;
+        justify-content: center;
     }
-    .blue-box { background-color: #007bff; border: 2px solid #0056b3; }
-    .orange-box { background-color: #fd7e14; border: 2px solid #d45d00; }
-    .red-box { background-color: #dc3545; border: 2px solid #a71d2a; }
-    .label { font-size: 0.8em; opacity: 0.9; display: block; margin-bottom: 5px; }
-    .number { font-size: 1.8em; display: block; }
+    .ana-sayi { background-color: rgba(28, 131, 225, 0.1); color: rgb(0, 104, 201); border-left: 5px solid rgb(0, 104, 201); }
+    .joker-sayi { background-color: rgba(255, 165, 0, 0.1); color: rgb(255, 140, 0); border-left: 5px solid rgb(255, 140, 0); }
+    .super-sayi { background-color: rgba(255, 75, 75, 0.1); color: rgb(255, 75, 75); border-left: 5px solid rgb(255, 75, 75); }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Master Analist - Kesin Yatay Görünüm")
+st.title("🛡️ Master Analist - v22 Final Panel")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
@@ -40,29 +41,29 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     
+    # Güncel çekiliş verisi
     last_draw = df.iloc[0]
     last_date = last_draw['Tarih'] if 'Tarih' in df.columns else "Bilinmiyor"
 
-    # --- HTML TABANLI YATAY ŞERİT ---
-    st.subheader(f"📅 Son Çekiliş Sonuçları ({last_date})")
+    # --- ÖNGÖRÜ KUTUSU TARZINDA YATAY SONUÇLAR ---
+    st.subheader(f"📅 Son Çekiliş: {last_date}")
     
-    # Tüm sonuçları tek bir HTML satırında birleştiriyoruz
-    loto_html = '<div class="loto-container">'
+    res_html = '<div class="result-row">'
     for c in cols:
-        loto_html += f'<div class="loto-box blue-box"><span class="label">{c}</span><span class="number">{int(last_draw[c])}</span></div>'
+        res_html += f'<div class="result-item ana-sayi">{c}: {int(last_draw[c])}</div>'
     
     if 'Joker' in df.columns:
-        loto_html += f'<div class="loto-box orange-box"><span class="label">Joker</span><span class="number">{int(last_draw["Joker"])}</span></div>'
+        res_html += f'<div class="result-item joker-sayi">Joker: {int(last_draw["Joker"])}</div>'
     
     if 'Super' in df.columns:
-        loto_html += f'<div class="loto-box red-box"><span class="label">Super</span><span class="number">{int(last_draw["Super"])}</span></div>'
+        res_html += f'<div class="result-item super-sayi">Super: {int(last_draw["Super"])}</div>'
     
-    loto_html += '</div>'
-    st.markdown(loto_html, unsafe_allow_html=True)
+    res_html += '</div>'
+    st.markdown(res_html, unsafe_allow_html=True)
     
     st.divider()
 
-    # --- ANALİZ VE MUHAKEME BÖLÜMÜ ---
+    # --- ANALİZ KATMANLARI ---
     draws = df[cols].dropna().astype(int).values
     last_seen = {n: i for i, d in enumerate(draws) for n in d}
     
@@ -104,7 +105,7 @@ if uploaded_file is not None:
                 res.extend(cands[offset : offset + count])
         return sorted(res[:6])
 
-    # --- ALT PANELLER ---
+    # --- ALT PANELLER (ÖNGÖRÜ VE ANALİZ) ---
     c1, c2 = st.columns([1, 2])
     with c1:
         st.subheader("🔮 Öngörü")
