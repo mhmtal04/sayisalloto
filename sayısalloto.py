@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - Master Analist v26", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v27", layout="wide")
 
-# Tasarım CSS (Sonuçları yatay ve şık yapar)
+# Tasarım CSS (V26 Standartları)
 st.markdown("""
     <style>
     .result-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 25px 0; }
@@ -19,7 +19,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Zaman Ayarlı Master Analist Botu")
+st.title("🛡️ Master Analist v27 - Tek/Çift & Diziliş Paneli")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
@@ -37,8 +37,6 @@ if uploaded_file is not None:
         res_html += f'<div class="result-item ana-sayi">{c}: {int(last_draw[c])}</div>'
     if 'Joker' in df.columns:
         res_html += f'<div class="result-item joker-sayi">Joker: {int(last_draw["Joker"])}</div>'
-    if 'Super' in df.columns:
-        res_html += f'<div class="result-item super-sayi">Super: {int(last_draw["Super"])}</div>'
     res_html += '</div>'
     st.markdown(res_html, unsafe_allow_html=True)
     st.divider()
@@ -51,7 +49,6 @@ if uploaded_file is not None:
         if len(clean_row) == 6: draws.append(clean_row)
     draws = np.array(draws)
 
-    # Matrisler ve Bekleme
     last_seen = {}
     for i, d in enumerate(draws):
         for n in d:
@@ -63,26 +60,43 @@ if uploaded_file is not None:
         for i in range(len(d)):
             for j in range(i + 1, len(d)):
                 n1, n2 = sorted([d[i], d[j]])
-                if n1 < 91 and n2 < 91: # Hata Engelleme
+                if n1 < 91 and n2 < 91:
                     co_matrix_global[n1][n2] += 1
                     if idx < 50: co_matrix_trend[n1][n2] += 1
 
     pos_freq = {c: Counter(df[c]) for c in cols}
     
-    def get_pattern(draw):
+    # --- ANALİZ FONKSİYONLARI ---
+    def get_pattern(draw): # Onluk blok dizilişi
         counts, _ = np.histogram(draw, bins=[1, 11, 21, 31, 41, 51, 61, 71, 81, 91])
         return tuple(counts)
+
+    def get_parity(draw): # Tek-Çift dizilişi (YENİ)
+        return tuple(['Tek' if n % 2 != 0 else 'Çift' for n in draw])
+
     all_patterns = [get_pattern(d) for d in draws]
+    all_parities = [get_parity(d) for d in draws]
 
-    # Markov
-    last_p = all_patterns[0]
-    successors = [all_patterns[i] for i in range(len(all_patterns)-1) if all_patterns[i+1] == last_p]
-    predicted_pattern = Counter(successors).most_common(1)[0][0] if successors else Counter(all_patterns).most_common(1)[0][0]
+    # Markov Tahmin Motoru (V26 Mantığıyla Çift Katmanlı)
+    def predict_next_sequence(history):
+        last_s = history[0]
+        succs = [history[i] for i in range(len(history)-1) if history[i+1] == last_s]
+        return Counter(succs).most_common(1)[0][0] if succs else Counter(history).most_common(1)[0][0]
 
-    # 3. SKORLAMA VE KOLON (Senin Kodun)
+    predicted_pattern = predict_next_sequence(all_patterns)
+    predicted_parity = predict_next_sequence(all_parities)
+
+    # 3. MASTER MUHAKEME MOTORU (V26 Sadık + Parite Filtresi)
     def get_master_score(n, pos_idx, current_res):
         region_idx = (n-1) // 10
         score = (pos_freq[cols[pos_idx]][n] * 0.4) + (last_seen.get(n, 0) * 0.1)
+        
+        # Parite Uyumu (YENİ ANALİZ)
+        target_parity = predicted_parity[pos_idx]
+        current_n_parity = 'Tek' if n % 2 != 0 else 'Çift'
+        if current_n_parity == target_parity:
+            score += 15.0 # Tahmin edilen tek/çift karakterine öncelik ver
+        
         if current_res:
             for prev in current_res:
                 n1, n2 = sorted([n, prev])
@@ -101,15 +115,16 @@ if uploaded_file is not None:
         for i, count in enumerate(p):
             if count > 0:
                 cands = [n for n in range(bins[i], bins[i+1]) if n not in res]
-                cands.sort(key=lambda x: get_master_score(x, i if i<6 else 5, res), reverse=True)
+                cands.sort(key=lambda x: get_master_score(x, len(res), res), reverse=True)
                 res.extend(cands[offset : offset + count])
         return sorted(res[:6])
 
-    # 4. ARAYÜZ
+    # 4. ARAYÜZ KATMANLARI
     c1, c2 = st.columns([1, 2])
     with c1:
         st.subheader("🔮 Öngörü")
-        st.write(f"Tahmin Dizilişi: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
+        st.write(f"Blok Dizilişi: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
+        st.write(f"Tek/Çift Tahmini: **{'-'.join([p[0] for p in predicted_parity])}**")
         st.success(f"🥇 1. Kolon: `{make_col(predicted_pattern, 0)}`")
         st.info(f"🥈 2. Kolon: `{make_col(predicted_pattern, 2)}`")
 
@@ -118,13 +133,18 @@ if uploaded_file is not None:
         pos_data = {c: [f"{num} ({count})" for num, count in pos_freq[c].most_common(5)] for c in cols}
         st.table(pd.DataFrame(pos_data))
 
-    # --- DİZİLİŞ GRAFİĞİ (Güvenli Mod) ---
+    # --- GRAFİKLER ---
     st.divider()
-    st.subheader("📈 En Popüler Diziliş Tipleri")
-    pattern_labels = ["-".join(map(str, [x for x in p if x>0])) for p in all_patterns]
-    pattern_counts = Counter(pattern_labels).most_common(5)
-    chart_df = pd.DataFrame(pattern_counts, columns=['Diziliş', 'Adet']).set_index('Diziliş')
-    st.bar_chart(chart_df)
+    g1, g2 = st.columns(2)
+    with g1:
+        st.subheader("📈 Popüler Blok Dizilişleri")
+        p_labels = ["-".join(map(str, [x for x in p if x>0])) for p in all_patterns]
+        st.bar_chart(pd.DataFrame(Counter(p_labels).most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş'))
+    
+    with g2:
+        st.subheader("☯️ Popüler Tek/Çift Dizilişleri")
+        parity_labels = ["-".join([s[0] for s in p]) for p in all_parities]
+        st.bar_chart(pd.DataFrame(Counter(parity_labels).most_common(5), columns=['Parite', 'Adet']).set_index('Parite'))
 
     # --- ANALİZ TABLOLARI ---
     st.divider()
@@ -135,11 +155,7 @@ if uploaded_file is not None:
         st.table(pd.DataFrame(sorted(tp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Trend']))
     with t2:
         st.subheader("🔗 Sinerji")
-        gp = []
-        for i in range(1, 91):
-            for j in range(i+1, 91):
-                if co_matrix_global[i][j] > 8:
-                    gp.append((f"{i}-{j}", int(co_matrix_global[i][j])))
+        gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1, 91) for j in range(i+1, 91) if co_matrix_global[i][j] > 8]
         st.table(pd.DataFrame(sorted(gp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Global']))
     with t3:
         st.subheader("💤 Pusu")
