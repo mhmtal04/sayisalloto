@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-st.set_page_config(page_title="Loto AI - v32 Dinamik Analist", layout="wide")
+st.set_page_config(page_title="Loto AI - v32.1 Dinamik Analist", layout="wide")
 
 # Tasarım CSS
 st.markdown("""
@@ -18,7 +18,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ v32 - Dinamik Fren & Serbest Muhakeme Motoru")
+st.title("🛡️ v32.1 - Dinamik Fren Sistemi")
 
 uploaded_file = st.file_uploader("CSV Dosyasını Yükle", type="csv")
 
@@ -35,16 +35,17 @@ if uploaded_file is not None:
     res_html += '</div>'
     st.markdown(res_html, unsafe_allow_html=True)
 
-    # 2. VERİ HAZIRLIĞI (1-9, 10-19... Blok Yapısı)
-    custom_bins = [1, 10, 20, 30, 40, 50, 60, 70, 80, 91]
+    # 2. VERİ HAZIRLIĞI
     draws_raw = df[cols].values
     draws = np.array([[int(x) for x in row if pd.notnull(x)] for row in draws_raw if len(row) >= 6])
+    custom_bins = [1, 10, 20, 30, 40, 50, 60, 70, 80, 91]
 
-    last_seen = {n: i for i, d in enumerate(draws) for n in d if n not in last_seen} # Basitleştirilmiş bekleme
+    # --- HATA DÜZELTİLDİ: BEKLEME SÜRESİ HESABI ---
     last_seen = {}
-    for i, d in enumerate(draws):
+    for i, d in enumerate(draws): # draws zaten yeniden eskiye sıralı varsayılıyor
         for n in d:
-            if n not in last_seen: last_seen[n] = i
+            if n not in last_seen:
+                last_seen[n] = i # Sayının en son kaç çekiliş önce çıktığı
 
     co_matrix_global = np.zeros((91, 91))
     for idx, d in enumerate(draws):
@@ -55,7 +56,6 @@ if uploaded_file is not None:
 
     pos_freq = {c: Counter(df[c]) for c in cols}
     
-    # Diziliş Analizi (Sadece Bloklara Odaklı)
     def get_pattern(draw): return tuple(np.histogram(draw, bins=custom_bins)[0])
     all_patterns = [get_pattern(d) for d in draws]
 
@@ -66,36 +66,35 @@ if uploaded_file is not None:
 
     predicted_pattern = predict_next_pattern(all_patterns)
 
-    # 3. YENİ NESİL MUHAKEME MOTORU (Dinamik Fren)
+    # 3. DINAMIK PUANLAMA MOTORU (Frenler Esnetildi)
     def get_dynamic_score(n, pos_idx, current_res):
         region_idx = np.digitize(n, custom_bins) - 1
         
-        # Temel Puan (Sıklık + Bekleme)
+        # Temel Puan
         score = (pos_freq[cols[pos_idx]][n] * 0.5) + (last_seen.get(n, 0) * 0.2)
         
-        # Sinerji (Global İkililer)
+        # Sinerji
         if current_res:
             for prev in current_res:
                 n1, n2 = sorted([n, prev])
                 score += (co_matrix_global[n1][n2] * 2.0)
         
-        # --- YÜZDESEL FRENLEME (Ceza Yerine Olasılık Düşürme) ---
-        # Sayı son 15 çekilişte kaç kere çıktı?
+        # --- % DÜŞÜRME SİSTEMİ (V26 Freni Esnetildi) ---
         count_last_15 = np.sum(draws[:15] == n)
         if count_last_15 >= 3:
-            score *= 0.3 # Puanı %70 oranında kır (Tamamen silme!)
+            score *= 0.25 # %75 ihtimal kaybı
         elif count_last_15 >= 1:
-            score *= 0.7 # Puanı %30 oranında kır
+            score *= 0.65 # %35 ihtimal kaybı
             
-        # Bölgesel Doygunluk Freni (Yüzdesel)
+        # Bölgesel Doygunluk
         if current_res:
             same_reg = sum(1 for s in current_res if (np.digitize(s, custom_bins)-1) == region_idx)
             if same_reg >= 1:
-                score *= 0.5 # Aynı bölgeden sayı seçme isteğini yarı yarıya düşür
+                score *= 0.45 # Aynı onluktan seçme isteğini %55 düşür
                 
         return score
 
-    # 4. KOLON ÜRETİMİ (Sadece Dizilişe Sadık)
+    # 4. KOLON ÜRETİMİ
     def make_col(pattern, offset=0):
         res = []
         req_regions = []
@@ -108,29 +107,34 @@ if uploaded_file is not None:
             cands.sort(key=lambda x: get_dynamic_score(x, i, res), reverse=True)
             
             if cands:
-                res.append(cands[min(offset, len(cands)-1)])
+                # Offset ile alternatif kolonlara şans ver
+                pick_idx = min(offset, len(cands)-1)
+                res.append(cands[pick_idx])
         return sorted(res)
 
     # 5. ARAYÜZ
     st.divider()
     c1, c2 = st.columns([1, 1.5])
     with c1:
-        st.subheader("🔮 Dinamik Öngörü")
-        st.write(f"Tahmin Edilen Blok Yapısı: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
+        st.subheader("🔮 Dinamik Tahmin")
+        st.write(f"Hedef Diziliş: **{'-'.join(map(str, [x for x in predicted_pattern if x>0]))}**")
         
-        st.success(f"🥇 Master Kolon: `{make_col(predicted_pattern, 0)}`")
-        st.info(f"🥈 Alternatif Kolon: `{make_col(predicted_pattern, 1)}`")
+        k1 = make_col(predicted_pattern, 0)
+        k2 = make_col(predicted_pattern, 1)
+        
+        st.success(f"🥇 Master Kolon: `{k1}`")
+        st.info(f"🥈 Alternatif Kolon: `{k2}`")
 
     with c2:
-        st.subheader("📈 Popüler Blok Dizilişleri")
+        st.subheader("📈 Diziliş Frekansı")
         p_labels = ["-".join(map(str, [x for x in p if x>0])) for p in all_patterns]
         st.bar_chart(pd.DataFrame(Counter(p_labels).most_common(5), columns=['Diziliş', 'Adet']).set_index('Diziliş'))
 
-    # ANALİZ TABLOLARI (V26 Standartları)
+    # TABLOLAR
     st.divider()
     t1, t2, t3 = st.columns(3)
     with t1:
-        st.subheader("🔥 Moda (Top 10)")
+        st.subheader("🔥 Global Moda")
         tp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1,91) for j in range(i+1,91) if co_matrix_global[i][j] > 10]
         st.table(pd.DataFrame(sorted(tp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Sıklık']))
     with t2:
@@ -138,6 +142,6 @@ if uploaded_file is not None:
         pos_data = {c: [num for num, count in pos_freq[c].most_common(5)] for c in cols}
         st.table(pd.DataFrame(pos_data))
     with t3:
-        st.subheader("💤 Pusu (Bekleyenler)")
-        pl = [(n, last_seen.get(n, 0)) for n in range(1, 91) if last_seen.get(n, 0) > 20]
-        st.table(pd.DataFrame(sorted(pl, key=lambda x: x[1], reverse=True)[:10], columns=['Sayı', 'Bekleme']))
+        st.subheader("💤 Bekleme Listesi")
+        pl = [(n, last_seen.get(n, 0)) for n in range(1, 91) if last_seen.get(n, 0) > 15]
+        st.table(pd.DataFrame(sorted(pl, key=lambda x: x[1], reverse=True)[:10], columns=['Sayı', 'Gecikme']))
