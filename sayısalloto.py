@@ -1,157 +1,130 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 from collections import Counter, defaultdict
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Loto AI v38 - Hyper-Markov Master", layout="wide")
+st.set_page_config(page_title="Loto AI - Master Analist v38", layout="wide")
 
-# --- CUSTOM CSS (V26 Standartları + Modern Dokunuş) ---
+# Tasarım CSS (V26 & v38 Standartları)
 st.markdown("""
     <style>
-    .stApp { background-color: #f4f7f9; }
-    .main-header { font-size: 36px; font-weight: bold; color: #1e3d59; text-align: center; margin-bottom: 20px; }
-    .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #e0e0e0; }
-    .last-draw-num { display: inline-block; width: 45px; height: 45px; background: #1e3d59; color: white; 
-                    border-radius: 50%; line-height: 45px; text-align: center; margin: 5px; font-weight: bold; font-size: 18px; }
-    .joker { background: #ff9800 !important; }
-    .super { background: #f44336 !important; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3.5em; background: linear-gradient(90deg, #1e3d59, #17b978); color: white; font-weight: bold; font-size: 18px; transition: 0.3s; border: none; }
-    .stButton>button:hover { transform: scale(1.02); background: linear-gradient(90deg, #17b978, #1e3d59); }
+    .result-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 25px 0; }
+    .result-item {
+        padding: 12px 18px; border-radius: 8px; font-weight: 600; font-size: 15px;
+        display: flex; align-items: center; justify-content: center; min-width: 110px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    .ana-sayi { background-color: rgba(28, 131, 225, 0.1); color: rgb(0, 104, 201); border-left: 4px solid rgb(0, 104, 201); }
+    .joker-sayi { background-color: rgba(255, 165, 0, 0.1); color: rgb(255, 140, 0); border-left: 4px solid rgb(255, 140, 0); }
+    .super-sayi { background-color: rgba(255, 75, 75, 0.1); color: rgb(255, 75, 75); border-left: 4px solid rgb(255, 75, 75); }
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">🛡️ Loto AI v38 - Markov & Momentum Analyst</div>', unsafe_allow_html=True)
+st.title("🛡️ Master Analist v38 - Hyper-Markov Master")
 
-uploaded_file = st.file_uploader("loto.csv dosyasını yükleyin", type="csv")
+uploaded_file = st.file_uploader("CSV Dosyasını Yükle (loto.csv)", type="csv")
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
-    data_raw = df[cols].dropna().values.astype(int)
     
-    # --- 1. SON ÇEKİLİŞ PANELİ ---
-    last_row = df.iloc[0]
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader(f"📅 Son Çekiliş: {last_row['Tarih']}")
-    draw_html = '<div>'
-    for c in cols: draw_html += f'<div class="last-draw-num">{int(last_row[c])}</div>'
-    if 'Joker' in df.columns: draw_html += f'<div class="last-draw-num joker">{int(last_row["Joker"])}</div>'
-    if 'Super' in df.columns: draw_html += f'<div class="last-draw-num super">{int(last_row["Super"])}</div>'
-    draw_html += '</div></div>'
-    st.markdown(draw_html, unsafe_allow_html=True)
+    # 1. SON ÇEKİLİŞ PANELİ
+    last_draw = df.iloc[0]
+    st.subheader(f"📅 Son Çekiliş Analizi: {last_draw['Tarih']}")
+    res_html = '<div class="result-row">'
+    for c in cols: res_html += f'<div class="result-item ana-sayi">{c}: {int(last_draw[c])}</div>'
+    if 'Joker' in df.columns: res_html += f'<div class="result-item joker-sayi">Joker: {int(last_draw["Joker"])}</div>'
+    res_html += '</div>'
+    st.markdown(res_html, unsafe_allow_html=True)
 
-    # --- 2. ANALİZ VE MARKOV HAZIRLIĞI ---
+    # 2. VERİ HAZIRLIĞI (v38 Logic)
     custom_bins = [1, 10, 20, 30, 40, 50, 60, 70, 80, 91]
-    
-    # Markov: Bloklar arası geçiş olasılığı (T_n block -> T_n+1 block)
-    transitions = defaultdict(lambda: defaultdict(int))
-    for draw in data_raw:
-        blocks = [np.digitize(n, custom_bins) - 1 for n in draw]
-        for i in range(len(blocks)-1):
-            transitions[(i, blocks[i])][blocks[i+1]] += 1
-            
-    markov_prob = {}
-    for state, next_states in transitions.items():
-        total = sum(next_states.values())
-        markov_prob[state] = {k: v/total for k, v in next_states.items()}
+    draws_raw = df[cols].values
+    draws = np.array([[int(x) for x in row if pd.notnull(x)] for row in draws_raw])
 
-    # Sinerji (Together) & Pusu (Waiting)
-    co_matrix = np.zeros((91, 91))
-    for d in data_raw[:300]:
-        for i in range(len(d)):
-            for j in range(i+1, len(d)):
-                n1, n2 = sorted([d[i], d[j]])
-                if n2 < 91: co_matrix[n1][n2] += 1
-
-    last_seen = {}
-    for i, d in enumerate(data_raw):
-        for n in d:
-            if n not in last_seen: last_seen[n] = i
-    
+    last_seen = {n: i for i, d in enumerate(draws[::-1]) for n in d} # Gecikme
     pos_freq = {c: Counter(df[c]) for c in cols}
-    patterns = [tuple(np.histogram(d, bins=custom_bins)[0]) for d in data_raw]
-    pattern_counts = Counter(patterns)
-
-    # --- 3. GÖRSEL ANALİZ ---
-    st.divider()
-    st.subheader("📊 Stratejik Göstergeler")
     
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("**En Çok Çıkan 5 Blok Dizilişi**")
-        p_labels = ["-".join(map(str, [x for x in p if x>0])) for p, c in pattern_counts.most_common(5)]
-        p_values = [c for p, c in pattern_counts.most_common(5)]
-        fig, ax = plt.subplots(figsize=(8, 4))
-        sns.barplot(x=p_labels, y=p_values, palette="viridis", ax=ax)
-        st.pyplot(fig)
+    # Sinerji Matrisleri
+    co_matrix_global = np.zeros((91, 91))
+    for d in draws:
+        for i in range(len(d)):
+            for j in range(i + 1, len(d)):
+                n1, n2 = sorted([d[i], d[j]])
+                if n2 < 91: co_matrix_global[n1][n2] += 1
 
-    with col_g2:
-        st.markdown("**Pozisyonel Liderler (T1-T6 En Çok Çıkan 5)**")
-        pos_df = pd.DataFrame({c: [n for n, f in pos_freq[c].most_common(5)] for c in cols})
-        st.table(pos_df)
-
-    st.divider()
-    col_g3, col_g4 = st.columns(2)
-    with col_g3:
-        st.markdown("**💤 Pusuda Bekleyen 15 Sayı (En Büyük Gecikme)**")
-        pusu_list = sorted([(n, last_seen.get(n, 0)) for n in range(1, 91)], key=lambda x: x[1], reverse=True)[:15]
-        st.table(pd.DataFrame(pusu_list, columns=["Sayı", "Gecikme"]))
-
-    with col_g4:
-        st.markdown("**🔗 Sinerji: En Çok Birlikte Çıkan 15 İkili**")
-        sin_pairs = []
-        for i in range(1, 91):
-            for j in range(i+1, 91):
-                if co_matrix[i][j] > 0: sin_pairs.append((f"{i}-{j}", int(co_matrix[i][j])))
-        sin_pairs = sorted(sin_pairs, key=lambda x: x[1], reverse=True)[:15]
-        st.table(pd.DataFrame(sin_pairs, columns=["İkili", "Frekans"]))
-
-    # --- 4. MUHAKEME VE TAHMİN ---
-    st.divider()
-    st.subheader("🔮 Hyper-Markov Muhakeme Motoru")
-    num_to_gen = st.slider("Tahmin Adedi (1-10)", 1, 10, 3)
-
+    # 3. v38 HYPER-MUHAKEME MOTORU
     def get_v38_score(n, pos_idx, current_res):
-        m_score = 0
-        if current_res:
-            prev_block = np.digitize(current_res[-1], custom_bins) - 1
-            m_score = markov_prob.get((pos_idx-1, prev_block), {}).get(np.digitize(n, custom_bins)-1, 0) * 200
+        region_idx = np.digitize(n, custom_bins) - 1
+        # Temel Frekans ve Gecikme Puanı
+        score = (pos_freq[cols[pos_idx]][n] * 0.5) + (last_seen.get(n, 0) * 0.3)
         
-        s_score = sum([co_matrix[sorted([n, p])[0]][sorted([n, p])[1]] for p in current_res]) * 15
-        w_score = last_seen.get(n, 0) * 2.5
-        f_score = pos_freq[cols[pos_idx]][n] * 1.0
-        
-        # YAYILIM VE BLOK KONTROLÜ (Dünkü sonucu yakalamak için kritik)
-        spread_score = 0
         if current_res:
-            gap = n - current_res[-1]
-            if 10 <= gap <= 25: spread_score = 70 # İdeal yayılım puanı
-            if gap < 6: spread_score = -200 # Kümelenme cezası
+            prev = current_res[-1]
+            n1, n2 = sorted([n, prev])
+            # Sinerji Katkısı
+            score += (co_matrix_global[n1][n2] * 2.0)
             
-        n_block = np.digitize(n, custom_bins) - 1
-        if any((np.digitize(p, custom_bins)-1) == n_block for p in current_res):
-            spread_score -= 150 # Blok doygunluğu cezası
+            # YAYILIM BONUSU (16,28,31 tipindeki homojen dağılımı yakalar)
+            gap = n - prev
+            if 8 <= gap <= 20: score += 100 
+            if gap < 5: score -= 150 # Kümelenme cezası
+            
+            # BLOK DOYGUNLUK FRENİ (Aynı onlukta ikinci sayıya ceza)
+            same_reg_count = sum(1 for s in current_res if (np.digitize(s, custom_bins)-1) == region_idx)
+            if same_reg_count >= 1: score -= 300
+            
+        return score
 
-        return m_score + s_score + w_score + f_score + spread_score
+    # Tahmin Üretim Fonksiyonu
+    def predict_v38_col(offset=0):
+        # En popüler örüntüleri (1-1-1-1-1-1 gibi) analiz et
+        patterns = [tuple(np.histogram(d, bins=custom_bins)[0]) for d in draws]
+        best_pattern = Counter(patterns).most_common(5)[offset % 5][0]
+        
+        res = []
+        req_regions = [i for i, count in enumerate(best_pattern) for _ in range(count)]
+        
+        for i, reg_idx in enumerate(req_regions):
+            start, end = custom_bins[reg_idx], custom_bins[reg_idx+1]
+            cands = [n for n in range(start, end) if n not in res]
+            if not cands: cands = [n for n in range(1, 91) if n not in res]
+            
+            cands.sort(key=lambda x: get_v38_score(x, i, res), reverse=True)
+            res.append(cands[min(offset, len(cands)-1)])
+        return sorted(res)
 
-    if st.button("🚀 Tahminleri Üret"):
-        for i in range(num_to_gen):
-            res = []
-            # Diziliş: Her onluktan bir sayı gelmesi durumu için bazen zorla (16,28,31... yapısı)
-            target_p = pattern_counts.most_common(5)[i % 5][0]
-            if i % 3 == 0: target_p = (0, 1, 1, 1, 1, 1, 0, 1, 0) # Mükemmel Yayılım Modu
-            
-            req_blocks = [idx for idx, count in enumerate(target_p) for _ in range(count)]
-            for idx, b_idx in enumerate(req_blocks):
-                start, end = custom_bins[b_idx], custom_bins[b_idx+1]
-                cands = [n for n in range(start, end) if n not in res]
-                if not cands: cands = [n for n in range(1, 91) if n not in res]
-                cands.sort(key=lambda x: get_v38_score(x, idx, res), reverse=True)
-                res.append(cands[min(i // 2, len(cands)-1)])
-            
-            st.success(f"**Tahmin {i+1}:** `{sorted(res)}` (Hyper-Spread Uyumlu)")
+    # 4. ARAYÜZ ÇIKTILARI
+    st.divider()
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("🔮 Hyper-Markov Öngörüsü")
+        k1 = predict_v38_col(0)
+        st.success(f"🥇 Master Kolon (v38): `{k1}`")
+        k2 = predict_v38_col(1)
+        st.info(f"🥈 Alternatif Kolon: `{k2}`")
+        st.warning("ℹ️ v38: Blok yayılımı ve homojen boşluk analizi aktif.")
+
+    with c2:
+        st.subheader("📍 Pozisyonel Liderler (Frekans)")
+        pos_data = {c: [f"{num} ({count})" for num, count in pos_freq[c].most_common(5)] for c in cols}
+        st.table(pd.DataFrame(pos_data))
+
+    # ANALİZ TABLOLARI
+    st.divider()
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        st.subheader("🔥 En Sinerjik İkililer")
+        gp = [(f"{i}-{j}", int(co_matrix_global[i][j])) for i in range(1, 91) for j in range(i+1, 91) if co_matrix_global[i][j] > 10]
+        st.table(pd.DataFrame(sorted(gp, key=lambda x: x[1], reverse=True)[:10], columns=['İkili', 'Frekans']))
+    with t2:
+        st.subheader("💤 Pusu 15 (En Gecikenler)")
+        pusu = sorted([(n, last_seen.get(n, 0)) for n in range(1,91)], key=lambda x: x[1], reverse=True)[:10]
+        st.table(pd.DataFrame(pusu, columns=['Sayı', 'Gecikme']))
+    with t3:
+        st.subheader("📈 En Popüler Blok Yapıları")
+        patterns = ["-".join(map(str, [x for x in p if x>0])) for p in [tuple(np.histogram(d, bins=custom_bins)[0]) for d in draws]]
+        st.table(pd.DataFrame(Counter(patterns).most_common(10), columns=['Diziliş', 'Adet']))
+
 else:
-    st.warning("Analiz başlatmak için lütfen CSV dosyasını yükleyin.")
+    st.info("Lütfen analiz için güncel loto.csv dosyasını yükleyin.")
