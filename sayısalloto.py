@@ -5,127 +5,132 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from collections import Counter
 
-# Sayfa Genişliği ve Stil
-st.set_page_config(page_title="Loto AI v36.1 - Deep Analysis", layout="wide")
+# Sayfa Ayarları
+st.set_page_config(page_title="Loto AI v36 - Hyper-Logic", layout="wide")
 
 st.markdown("""
     <style>
     .reportview-container { background: #f0f2f6; }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
-    .metric-card { background: white; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3.5em; background-color: #0083B8; color: white; font-weight: bold; }
+    .result-card { padding: 15px; border-radius: 10px; border: 1px solid #ddd; background-color: white; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ v36.1 Deep-Analysis: Muhakeme ve Görsel Denetim")
+st.title("🛡️ v36 Hyper-Logic: Gelişmiş Muhakeme ve Tahmin")
 
-uploaded_file = st.file_uploader("loto.csv dosyasını buraya yükleyin", type="csv")
+uploaded_file = st.file_uploader("loto.csv dosyasını yükleyin", type="csv")
 
 if uploaded_file is not None:
-    # Veriyi Oku ve Temizle
     df = pd.read_csv(uploaded_file)
     cols = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
     draws = df[cols].dropna().values.astype(int)
     
-    # 1. ANALİZ KATMANLARI
-    # Pozisyonel Güç (T1-T6 her bölgenin lideri)
-    pos_freq = {c: Counter(df[c]) for c in cols}
+    # --- 1. VERİ ANALİZ KATMANLARI ---
     
-    # Bekleme Listesi (En uzun süredir çıkmayanlar)
+    # Pozisyonel En Çok Çıkan 5 (T1-T6)
+    pos_freq = {c: Counter(df[c]).most_common(5) for c in cols}
+    
+    # Uzun Zamandır Çıkmayan 15 Sayı (Pusu)
     last_seen = {}
     for i, d in enumerate(draws):
         for n in d:
             if n not in last_seen: last_seen[n] = i
-    waiting_15 = sorted([(n, last_seen.get(n, 0)) for n in range(1, 91)], key=lambda x: x[1], reverse=True)[:15]
-
-    # Sinerji (Birlikte en çok çıkan 15 ikili)
-    co_matrix = np.zeros((91, 91))
-    for d in draws[:200]: # Son 200 çekilişi baz al
-        for i in range(len(d)):
-            for j in range(i + 1, len(d)):
-                n1, n2 = sorted([d[i], d[j]])
-                if n2 < 91: co_matrix[n1][n2] += 1
+    waiting_15 = sorted([(n, i) for n, i in last_seen.items()], key=lambda x: x[1], reverse=True)[:15]
     
-    synergy_list = []
+    # En Çok Birlikte Çıkan 15 İkili (Sinerji)
+    co_matrix = np.zeros((91, 91))
+    for d in draws:
+        d_sorted = sorted(d)
+        for i in range(len(d_sorted)):
+            for j in range(i + 1, len(d_sorted)):
+                co_matrix[d_sorted[i]][d_sorted[j]] += 1
+    
+    sinerji_list = []
     for i in range(1, 91):
         for j in range(i+1, 91):
             if co_matrix[i][j] > 0:
-                synergy_list.append((f"{i}-{j}", int(co_matrix[i][j])))
-    synergy_15 = sorted(synergy_list, key=lambda x: x[1], reverse=True)[:15]
+                sinerji_list.append(((i, j), int(co_matrix[i][j])))
+    top_sinerji_15 = sorted(sinerji_list, key=lambda x: x[1], reverse=True)[:15]
 
-    # Diziliş Analizi (Blok Yapısı)
+    # En Çok Çıkan 5 Diziliş (Pattern)
     custom_bins = [1, 10, 20, 30, 40, 50, 60, 70, 80, 91]
-    patterns = [tuple(np.histogram(d, bins=custom_bins)[0]) for d in draws]
-    pattern_counts = Counter(patterns)
+    all_patterns = [tuple(np.histogram(d, bins=custom_bins)[0]) for d in draws]
+    top_patterns_5 = Counter(all_patterns).most_common(5)
 
-    # --- ARAYÜZ GRAFİKLERİ ---
-    st.divider()
-    c1, c2 = st.columns([1.5, 1])
+    # --- 2. GÖRSEL ARAYÜZ (GRAFİKLER) ---
     
-    with c1:
-        st.subheader("📊 Tarihsel Blok Diziliş Grafiği")
-        p_data = pd.DataFrame([{"Diziliş": "-".join(map(str, [x for x in p if x>0])), "Frekans": count} 
-                             for p, count in pattern_counts.most_common(10)])
-        st.bar_chart(p_data.set_index("Diziliş"))
+    st.divider()
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 En Çok Çıkan 5 Diziliş")
+        p_labels = ["-".join(map(str, [x for x in p[0] if x > 0])) for p in top_patterns_5]
+        p_values = [p[1] for p in top_patterns_5]
+        fig1, ax1 = plt.subplots(figsize=(10, 5))
+        sns.barplot(x=p_labels, y=p_values, palette="Blues_d", ax=ax1)
+        st.pyplot(fig1)
 
-    with c2:
-        st.subheader("🔥 Sayı Yoğunluk Haritası")
-        heat_data = np.zeros((9, 10))
+    with col2:
+        st.subheader("🔥 Sayıların Genel Sıcaklık Haritası")
+        heat_map_data = np.zeros((9, 10))
         for n in range(1, 91):
             r, c = (n-1)//10, (n-1)%10
-            heat_data[r, c] = Counter(draws[:50].flatten()).get(n, 0)
-        fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(heat_data, cmap="YlOrRd", cbar=False, annot=False)
-        st.pyplot(fig)
+            heat_map_data[r, c] = Counter(draws.flatten()).get(n, 0)
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+        sns.heatmap(heat_map_data, cmap="YlOrRd", annot=False, ax=ax2)
+        st.pyplot(fig2)
 
-    # --- ANALİZ TABLOLARI ---
     st.divider()
-    t1, t2, t3 = st.columns(3)
+    t_col1, t_col2, t_col3 = st.columns(3)
     
-    with t1:
+    with t_col1:
         st.subheader("📍 T-Bölgesi Liderleri (Top 5)")
-        pos_df = pd.DataFrame({c: [n for n, f in pos_freq[c].most_common(5)] for c in cols})
-        st.table(pos_df)
+        st.table(pd.DataFrame({c: [f"{n} ({f})" for n, f in pos_freq[c]] for c in cols}))
 
-    with t2:
-        st.subheader("💤 Pusuda Bekleyenler (15)")
-        st.table(pd.DataFrame(waiting_15, columns=["Sayı", "Gecikme (Çekiliş)"]))
+    with t_col2:
+        st.subheader("💤 Pusu: Bekleyen 15 Sayı")
+        st.table(pd.DataFrame(waiting_15, columns=["Sayı", "Kaç Çekiliştir Yok"]))
 
-    with t3:
-        st.subheader("🔗 En Çok Birlikte Çıkanlar (15)")
-        st.table(pd.DataFrame(synergy_15, columns=["İkili", "Birlikte"]))
+    with t_col3:
+        st.subheader("🔗 Sinerji: En Çok Birlikte Çıkan 15")
+        st.table(pd.DataFrame([{"İkili": f"{k[0]}-{k[1]}", "Sıklık": v} for k, v in top_sinerji_15]))
 
-    # --- TAHMİN ÜRETİM BUTONU ---
+    # --- 3. TAHMİN ÜRETİCİ ---
     st.divider()
-    st.subheader("🔮 v36.1 Hyper-Tahmin Üretici")
-    col_count = st.slider("Üretilecek Tahmin Sayısı", 1, 10, 5)
-
-    def get_deep_score(n, pos_idx, current_res):
-        # Dünkü sonucu (16,28,31,41,59,74) yakalamak için dengelenmiş formül:
-        freq_p = pos_freq[cols[pos_idx]][n] * 1.5
-        wait_p = last_seen.get(n, 0) * 0.8
-        syn_p = 0
+    st.subheader("🔮 Hyper-Logic Tahmin Motoru")
+    adet = st.number_input("Kaç kolon üretilsin?", 1, 10, 5)
+    
+    def get_v36_score(n, pos_idx, current_res):
+        # Dünkü 16, 28, 31, 41, 59, 74'ü yakalamak için hibrit puanlama
+        p_puan = dict(pos_freq[cols[pos_idx]]).get(n, 0) * 1.5
+        w_puan = last_seen.get(n, 0) * 0.8 # Bekleme süresi ağırlığı
+        
+        # Sinerji (Birlikte çıkma) - En önemli bileşen
+        s_puan = 0
         if current_res:
             for prev in current_res:
                 n1, n2 = sorted([n, prev])
-                syn_p += co_matrix[n1][n2] * 15.0 # Sinerji baskınlığı
-                # Mesafe kontrolü (Dünkü gibi dengeli yayılım için)
-                if 10 <= abs(n - prev) <= 25: syn_p += 20
-        return freq_p + wait_p + syn_p
+                s_puan += co_matrix[n1][n2] * 5.0 # Sinerji çarpanı
+                # Yayılım Kontrolü: Ardışık sayılar arası 10-18 fark varsa dünkü gibi yayılır
+                if 10 <= abs(n - prev) <= 18: s_puan += 20
+        
+        return p_puan + w_puan + s_puan
 
     if st.button("TAHMİN ÜRET"):
-        st.markdown("### 🎲 Senin İçin Hesaplanan Kolonlar:")
-        for i in range(col_count):
+        st.write("### Üretilen Tahminler")
+        for i in range(adet):
             res = []
-            # Diziliş: Her tahminde en popüler 2 dizilişi dönüşümlü kullan
-            target_p = (1, 1, 1, 1, 1, 1, 0, 0, 0) if i % 2 == 0 else pattern_counts.most_common(1)[0][0]
-            req_regions = [idx for idx, val in enumerate(target_p) for _ in range(val)]
+            # Her kolon için farklı bir diziliş stratejisi (Dengeli Yayılım)
+            target_p = top_patterns_5[i % 5][0]
+            req_regions = [idx for idx, count in enumerate(target_p) for _ in range(count)]
             
             for idx, reg_idx in enumerate(req_regions):
                 start, end = custom_bins[reg_idx], custom_bins[reg_idx+1]
-                candidates = [n for n in range(start, end) if n not in res]
-                candidates.sort(key=lambda x: get_deep_score(x, idx, res), reverse=True)
-                if candidates:
-                    # Biraz varyasyon katmak için i oranında offset kullan
-                    res.append(candidates[min(i, len(candidates)-1)])
+                cands = [n for n in range(start, end) if n not in res]
+                cands.sort(key=lambda x: get_v36_score(x, idx, res), reverse=True)
+                if cands:
+                    # Biraz varyasyon eklemek için i değerini offset olarak kullan
+                    pick = cands[min(i, len(cands)-1)]
+                    res.append(pick)
             
-            st.success(f"**Kolon {i+1}:** {sorted(res)}")
+            st.markdown(f"<div class='result-card'><b>Kolon {i+1}:</b> <span style='color:#0083B8; font-size:18px;'>{sorted(res)}</span></div>", unsafe_allow_html=True)
